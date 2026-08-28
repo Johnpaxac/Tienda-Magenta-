@@ -1,13 +1,11 @@
 "use client";
 
-import Script from "next/script";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ACCOUNTS_STORAGE_KEY,
   DEMO_ACCOUNTS,
   SESSION_STORAGE_KEY,
-  type AuthProvider,
   type AuthSession,
   type StoredAccount,
 } from "@/back/auth";
@@ -26,12 +24,8 @@ function normalizeEmail(email: string) {
 
 export default function LoginPage() {
   const router = useRouter();
-  const googleButtonRef = useRef<HTMLDivElement>(null);
-  const googleInitializedRef = useRef(false);
   const [mode, setMode] = useState<Mode>("login");
   const [loaded, setLoaded] = useState(false);
-  const [googleScriptLoaded, setGoogleScriptLoaded] = useState(false);
-  const [googleBusy, setGoogleBusy] = useState(false);
   const [accounts, setAccounts] = useState<StoredAccount[]>(DEMO_ACCOUNTS);
   const [form, setForm] = useState(EMPTY_FORM);
   const [notice, setNotice] = useState("Ingresá o creá tu cuenta para ver el catálogo.");
@@ -67,75 +61,12 @@ export default function LoginPage() {
     localStorage.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(accounts));
   }, [accounts, loaded]);
 
-  useEffect(() => {
-    if (!googleScriptLoaded || !googleButtonRef.current || googleInitializedRef.current) {
-      return;
-    }
-
-    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-
-    if (!clientId) {
-      setNotice("Falta configurar NEXT_PUBLIC_GOOGLE_CLIENT_ID para usar Google.");
-      return;
-    }
-
-    const google = window.google;
-
-    if (!google?.accounts?.id) {
-      setNotice("No se pudo cargar el acceso con Google.");
-      return;
-    }
-
-    googleInitializedRef.current = true;
-
-    google.accounts.id.initialize({
-      client_id: clientId,
-      callback: async (response) => {
-        setGoogleBusy(true);
-
-        try {
-          const result = await fetch("/api/auth/google", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ credential: response.credential }),
-          });
-
-          if (!result.ok) {
-            const payload = (await result.json().catch(() => null)) as { error?: string } | null;
-            setNotice(payload?.error ?? "No se pudo validar Google.");
-            return;
-          }
-
-          const session = (await result.json()) as AuthSession;
-          localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
-          router.push("/catalogo");
-        } catch {
-          setNotice("No se pudo conectar con Google.");
-        } finally {
-          setGoogleBusy(false);
-        }
-      },
-      auto_select: false,
-      cancel_on_tap_outside: true,
-    });
-
-    google.accounts.id.renderButton(googleButtonRef.current, {
-      theme: "outline",
-      size: "large",
-      shape: "pill",
-      text: "continue_with",
-      locale: "es",
-    });
-  }, [googleScriptLoaded, router]);
-
-  function saveSession(account: StoredAccount, provider: AuthProvider) {
+  function saveSession(account: StoredAccount) {
     const session: AuthSession = {
       name: account.name,
       email: account.email,
       role: account.role,
-      provider,
+      provider: "email",
     };
 
     localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
@@ -167,7 +98,7 @@ export default function LoginPage() {
       };
 
       setAccounts((currentAccounts) => [...currentAccounts, nextAccount]);
-      saveSession(nextAccount, "email");
+      saveSession(nextAccount);
       return;
     }
 
@@ -180,7 +111,12 @@ export default function LoginPage() {
       return;
     }
 
-    saveSession(matchedAccount, matchedAccount.provider);
+    saveSession(matchedAccount);
+  }
+
+  function continueAsGuest() {
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+    router.push("/catalogo");
   }
 
   if (!loaded) {
@@ -287,16 +223,13 @@ export default function LoginPage() {
               </form>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <div
-                  ref={googleButtonRef}
-                  className="min-h-[48px] rounded-full border border-[#d41478]/20 bg-white/80 px-3 py-1"
+                <button
+                  type="button"
+                  onClick={continueAsGuest}
+                  className="rounded-full border border-[#d41478]/20 px-5 py-3 text-sm font-semibold text-[#b20b5f] transition hover:bg-white"
                 >
-                  {googleBusy ? (
-                    <div className="flex h-full items-center justify-center text-sm font-semibold text-[#6b3151]">
-                      Conectando con Google...
-                    </div>
-                  ) : null}
-                </div>
+                  Continuar como invitado
+                </button>
                 <button
                   type="button"
                   onClick={() => setMode("login")}
@@ -308,7 +241,7 @@ export default function LoginPage() {
 
               <div className="mt-4 rounded-2xl bg-white/75 p-4 text-sm text-[#7b4d68]">
                 <p className="font-semibold text-[#b20b5f]">Acceso</p>
-                <p className="mt-1">Usá tu cuenta o continuá con Google.</p>
+                <p className="mt-1">Ingresá con email y contraseña, o entrá como invitado.</p>
               </div>
             </div>
           </div>
@@ -318,11 +251,6 @@ export default function LoginPage() {
           Datos de contacto y pie de página pendientes. Acá después van tus enlaces, redes o texto final.
         </footer>
 
-        <Script
-          src="https://accounts.google.com/gsi/client"
-          strategy="afterInteractive"
-          onLoad={() => setGoogleScriptLoaded(true)}
-        />
       </section>
     </main>
   );

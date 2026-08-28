@@ -47,6 +47,14 @@ function CartIcon() {
   );
 }
 
+function PersonIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
+      <path fill="currentColor" d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5Z" />
+    </svg>
+  );
+}
+
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -73,6 +81,7 @@ export default function CatalogPage() {
   const [maxPrice, setMaxPrice] = useState(80000);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
   const [productForm, setProductForm] = useState<ProductForm>(emptyProductForm);
 
@@ -283,27 +292,33 @@ export default function CatalogPage() {
               </p>
             </div>
 
-            <div className="glass w-full max-w-md rounded-[1.85rem] p-4 text-sm text-[#6b3151] lg:p-5">
-              <div className="flex items-center justify-between gap-4">
-                <span className="font-semibold text-[#b20b5f]">{isAdmin ? "Administración" : "Sesión pública"}</span>
-                <button
-                  type="button"
-                  onClick={logout}
-                  className="rounded-full border border-[#d41478]/20 px-4 py-2 text-xs font-semibold text-[#b20b5f]"
-                >
-                  Salir
-                </button>
-              </div>
-              <p className="mt-3 text-base font-semibold text-[#6d1047]">
-                {session?.name ?? "Podés comprar sin iniciar sesión"}
-              </p>
-              {session?.provider === "google" ? (
-                <button
-                  type="button"
-                  className="mt-3 inline-flex rounded-full border border-[#d41478]/20 bg-white px-3 py-1.5 text-xs font-semibold text-[#b20b5f]"
-                >
-                  Google conectado
-                </button>
+            <div className="relative flex justify-end">
+              <button
+                type="button"
+                aria-label="Ver estado de cuenta"
+                aria-expanded={accountOpen}
+                onClick={() => setAccountOpen((open) => !open)}
+                className="flex h-12 w-12 items-center justify-center rounded-full bg-[#d41478] text-white shadow-lg transition hover:bg-[#b20b5f]"
+              >
+                <PersonIcon />
+              </button>
+              {accountOpen ? (
+                <div className="glass absolute right-0 top-14 z-10 w-64 rounded-2xl p-4 text-sm text-[#6b3151] shadow-xl">
+                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#a4547b]">Cuenta</p>
+                  <p className="mt-2 font-semibold text-[#6d1047]">{session?.name ?? "Invitado"}</p>
+                  <p className="mt-1 text-xs text-[#8a5a78]">
+                    {isAdmin ? "Administrador" : session ? "Cliente" : "Estás navegando como invitado"}
+                  </p>
+                  {session ? (
+                    <button type="button" onClick={logout} className="mt-4 w-full rounded-full border border-[#d41478]/20 px-4 py-2 text-xs font-semibold text-[#b20b5f]">
+                      Cerrar sesión
+                    </button>
+                  ) : (
+                    <button type="button" onClick={() => router.push("/")} className="mt-4 w-full rounded-full bg-[#d41478] px-4 py-2 text-xs font-semibold text-white">
+                      Iniciar sesión
+                    </button>
+                  )}
+                </div>
               ) : null}
             </div>
           </div>

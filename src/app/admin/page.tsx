@@ -1,1 +1,1 @@
-export { default } from "@/front/LoginPage";
+export { default } from "@/front/CatalogPage";

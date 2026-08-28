@@ -1,6 +1,6 @@
 export type AuthRole = "user" | "admin";
 
-export type AuthProvider = "email" | "google";
+export type AuthProvider = "email";
 
 export type AuthSession = {
   name: string;
@@ -34,11 +34,5 @@ export const DEMO_ACCOUNTS: StoredAccount[] = [
     password: "magenta123",
     role: "user",
     provider: "email",
-  },
-  {
-    name: "Cuenta Google",
-    email: "google@magenta.com",
-    role: "user",
-    provider: "google",
   },
 ];
