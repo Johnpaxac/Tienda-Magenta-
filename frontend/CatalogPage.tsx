@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { SESSION_STORAGE_KEY, type AuthSession } from "@/back/auth";
-import { categories, initialProducts, type Product } from "@/back/catalog";
+import type { AuthSession } from "@/backend/auth";
+import { categories, initialProducts, type Product } from "@/backend/catalog";
 
 type CartItem = {
   productId: number;
@@ -34,6 +34,10 @@ function formatPrice(amount: number) {
     currency: "ARS",
     maximumFractionDigits: 0,
   }).format(amount);
+}
+
+function productImage(product: Product) {
+  return product.image || initialProducts.find((item) => item.id === product.id)?.image || initialProducts[0].image;
 }
 
 function CartIcon() {
@@ -70,7 +74,7 @@ function readFileAsDataUrl(file: File) {
   });
 }
 
-export default function CatalogPage() {
+export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean }) {
   const router = useRouter();
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [session, setSession] = useState<AuthSession | null>(null);
@@ -86,18 +90,28 @@ export default function CatalogPage() {
   const [productForm, setProductForm] = useState<ProductForm>(emptyProductForm);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    void fetch("/api/products")
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return (await response.json()) as Product[];
+      })
+      .then((nextProducts) => {
+        if (nextProducts?.length) setProducts(nextProducts);
+      });
 
-    if (!stored) {
-      return;
-    }
+    if (!adminOnly) return;
 
-    try {
-      setSession(JSON.parse(stored) as AuthSession);
-    } catch {
-      window.localStorage.removeItem(SESSION_STORAGE_KEY);
-    }
-  }, [router]);
+    void fetch("/api/auth/session")
+      .then((response) => response.json())
+      .then((nextSession: AuthSession | null) => {
+        if (nextSession?.role === "admin") {
+          setSession(nextSession);
+        } else {
+          router.replace("/admin");
+        }
+      })
+      .catch(() => router.replace("/admin"));
+  }, [adminOnly, router]);
 
   const filteredProducts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -151,8 +165,7 @@ export default function CatalogPage() {
   );
 
   const logout = () => {
-    window.localStorage.removeItem(SESSION_STORAGE_KEY);
-    router.replace("/");
+    void fetch("/api/auth/logout", { method: "POST" }).finally(() => router.replace("/"));
   };
 
   const addToCart = (productId: number) => {
@@ -217,7 +230,7 @@ export default function CatalogPage() {
     });
   };
 
-  const saveProduct = (event: React.FormEvent<HTMLFormElement>) => {
+  const saveProduct = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     const nextProduct: Product = {
@@ -234,16 +247,30 @@ export default function CatalogPage() {
       return;
     }
 
+    const response = await fetch("/api/products", {
+      method: selectedProductId ? "PATCH" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(selectedProductId ? nextProduct : { ...nextProduct, id: undefined }),
+    });
+
+    if (!response.ok) return;
+    const savedProduct = (await response.json()) as Product;
     setProducts((current) =>
       selectedProductId
-        ? current.map((item) => (item.id === selectedProductId ? nextProduct : item))
-        : [nextProduct, ...current],
+        ? current.map((item) => (item.id === savedProduct.id ? savedProduct : item))
+        : [savedProduct, ...current],
     );
-
     resetProductForm();
   };
 
-  const deleteProduct = (productId: number) => {
+  const deleteProduct = async (productId: number) => {
+    const response = await fetch("/api/products", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: productId }),
+    });
+
+    if (!response.ok) return;
     setProducts((current) => current.filter((item) => item.id !== productId));
     setCart((current) => current.filter((item) => item.productId !== productId));
 
@@ -270,6 +297,10 @@ export default function CatalogPage() {
   };
 
   const isAdmin = session?.role === "admin";
+
+  if (adminOnly && !isAdmin) {
+    return null;
+  }
 
   return (
     <main className="soft-scrollbar relative flex-1 overflow-hidden text-[#5b0c3d]">
@@ -307,17 +338,13 @@ export default function CatalogPage() {
                   <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#a4547b]">Cuenta</p>
                   <p className="mt-2 font-semibold text-[#6d1047]">{session?.name ?? "Invitado"}</p>
                   <p className="mt-1 text-xs text-[#8a5a78]">
-                    {isAdmin ? "Administrador" : session ? "Cliente" : "Estás navegando como invitado"}
+                    {isAdmin ? "Administrador" : session ? "Inició con cuenta de Google" : "Estás navegando como invitado"}
                   </p>
-                  {session ? (
+                  {isAdmin ? (
                     <button type="button" onClick={logout} className="mt-4 w-full rounded-full border border-[#d41478]/20 px-4 py-2 text-xs font-semibold text-[#b20b5f]">
                       Cerrar sesión
                     </button>
-                  ) : (
-                    <button type="button" onClick={() => router.push("/")} className="mt-4 w-full rounded-full bg-[#d41478] px-4 py-2 text-xs font-semibold text-white">
-                      Iniciar sesión
-                    </button>
-                  )}
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -515,7 +542,7 @@ export default function CatalogPage() {
                 >
                   <div className="relative aspect-[4/3] overflow-hidden bg-gradient-to-br from-[#ffd1e6] via-[#f7a0c9] to-[#d41478]">
                     <img
-                      src={product.image}
+                      src={productImage(product)}
                       alt={product.name}
                       className="h-full w-full object-cover opacity-95 transition duration-500 group-hover:scale-105"
                     />
@@ -745,7 +772,7 @@ export default function CatalogPage() {
                     <div key={product.id} className="rounded-2xl bg-white/75 p-4">
                       <div className="flex items-start gap-3">
                         <img
-                          src={product.image}
+                          src={productImage(product)}
                           alt={product.name}
                           className="h-14 w-14 rounded-2xl object-cover"
                         />
