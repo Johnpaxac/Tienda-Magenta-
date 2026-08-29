@@ -14,6 +14,7 @@ export type Product = {
   category: Category;
   image: string;
   featured?: boolean;
+  soldOut?: boolean;
 };
 
 export const categories: Array<"Todos" | Category> = [
@@ -59,6 +60,7 @@ export const initialProducts: Product[] = [
     category: "Ojos",
     image: makePlaceholder("Paleta Sunset Glow", "#ffb2d4", "#d41478"),
     featured: true,
+    soldOut: false,
   },
   {
     id: 2,
@@ -68,6 +70,7 @@ export const initialProducts: Product[] = [
     category: "Rostro",
     image: makePlaceholder("Base Silk Finish", "#ffd2e7", "#b20b5f"),
     featured: true,
+    soldOut: false,
   },
   {
     id: 3,
@@ -76,6 +79,7 @@ export const initialProducts: Product[] = [
     price: 15800,
     category: "Labios",
     image: makePlaceholder("Gloss Berry Kiss", "#f59ac5", "#8f2457"),
+    soldOut: false,
   },
   {
     id: 4,
@@ -84,6 +88,7 @@ export const initialProducts: Product[] = [
     price: 49900,
     category: "Bolsos",
     image: makePlaceholder("Bolso Aura Mini", "#ffcfe2", "#d41478"),
+    soldOut: true,
   },
   {
     id: 5,
@@ -92,6 +97,7 @@ export const initialProducts: Product[] = [
     price: 21200,
     category: "Collares",
     image: makePlaceholder("Collar Rose Line", "#ffd8ea", "#a20d58"),
+    soldOut: false,
   },
   {
     id: 6,
@@ -100,5 +106,6 @@ export const initialProducts: Product[] = [
     price: 11900,
     category: "Accesorios",
     image: makePlaceholder("Set Pink Detail", "#f7b7d3", "#d41478"),
+    soldOut: false,
   },
 ];

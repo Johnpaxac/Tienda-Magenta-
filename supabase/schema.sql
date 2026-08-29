@@ -9,7 +9,8 @@ create table if not exists public.products (
   price numeric not null check (price >= 0),
   category text not null,
   image text not null,
-  featured boolean not null default false
+  featured boolean not null default false,
+  sold_out boolean not null default false
 );
 
 alter table public.admin_users enable row level security;

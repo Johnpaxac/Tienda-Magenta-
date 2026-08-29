@@ -17,6 +17,7 @@ type ProductForm = {
   category: Product["category"];
   image: string;
   featured: boolean;
+  soldOut: boolean;
 };
 
 const emptyProductForm: ProductForm = {
@@ -26,6 +27,7 @@ const emptyProductForm: ProductForm = {
   category: "Ojos",
   image: "",
   featured: false,
+  soldOut: false,
 };
 
 function formatPrice(amount: number) {
@@ -80,14 +82,19 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
   const [session, setSession] = useState<AuthSession | null>(null);
   const [products, setProducts] = useState(initialProducts);
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState<(typeof categories)[number]>("Todos");
+  const [catalogCategories, setCatalogCategories] = useState<Array<"Todos" | Product["category"]>>(
+    categories as Array<"Todos" | Product["category"]>,
+  );
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState("featured");
   const [maxPrice, setMaxPrice] = useState(80000);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
+  const [activeAdminTab, setActiveAdminTab] = useState<"product" | "category">("product");
   const [productForm, setProductForm] = useState<ProductForm>(emptyProductForm);
+  const [categoryForm, setCategoryForm] = useState({ name: "", image: "" });
 
   useEffect(() => {
     void fetch("/api/products")
@@ -113,12 +120,30 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
       .catch(() => router.replace("/admin"));
   }, [adminOnly, router]);
 
+  const visibleCategories = useMemo(
+    () => catalogCategories.filter((item): item is Product["category"] => item !== "Todos"),
+    [catalogCategories],
+  );
+
+  const categoryCards = useMemo(
+    () =>
+      visibleCategories.map((name) => {
+        const product = products.find((item) => item.category === name) ?? initialProducts[0];
+        return {
+          name,
+          image: productImage(product),
+        };
+      }),
+    [products, visibleCategories],
+  );
+
   const filteredProducts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
+    const currentCategory = selectedCategory ?? "Todos";
 
     return [...products]
       .filter((product) => {
-        const matchesCategory = category === "Todos" || product.category === category;
+        const matchesCategory = currentCategory === "Todos" || product.category === currentCategory;
         const matchesPrice = product.price <= maxPrice;
         const matchesQuery =
           !normalizedQuery ||
@@ -133,7 +158,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
         if (sortBy === "name") return first.name.localeCompare(second.name);
         return Number(second.featured) - Number(first.featured) || first.name.localeCompare(second.name);
       });
-  }, [category, maxPrice, products, query, sortBy]);
+  }, [maxPrice, products, query, selectedCategory, sortBy]);
 
   const cartItems = useMemo(
     () =>
@@ -197,8 +222,14 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
   };
 
   const buyNow = (product: Product) => {
-    const message = `Hola, quiero comprar ${product.name} por ${formatPrice(product.price)}.`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+    const message = [
+      "Holaaa, me gustaría este producto, ¿está disponible?",
+      "",
+      `${product.name}`,
+      `Precio: ${formatPrice(product.price)}`,
+      `Categoría: ${product.category}`,
+    ].join("\n");
+    window.open(`https://wa.me/5493564419927?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
   };
 
   const buyCart = () => {
@@ -209,13 +240,47 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
     const lines = cartItems.map(
       (item) => `${item.quantity} x ${item.product.name} = ${formatPrice(item.subtotal)}`,
     );
-    const message = [`Hola, quiero comprar:`, ...lines, `Total: ${formatPrice(cartTotal)}`].join("\n");
-    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+    const message = [
+      "Holaaa, me gustaría estos productos, ¿están disponibles?",
+      "",
+      ...lines,
+      "",
+      `Total: ${formatPrice(cartTotal)}`,
+    ].join("\n");
+    window.open(`https://wa.me/5493564419927?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
   };
 
   const resetProductForm = () => {
     setSelectedProductId(null);
     setProductForm(emptyProductForm);
+  };
+
+  const resetCategoryForm = () => {
+    setCategoryForm({ name: "", image: "" });
+  };
+
+  const saveCategory = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const nextName = categoryForm.name.trim();
+
+    if (!nextName) {
+      return;
+    }
+
+    const normalized = nextName.replace(/\s+/g, " ");
+    const candidate = normalized as Product["category"];
+
+    setCatalogCategories((current) => {
+      const alreadyExists = current.some((item) => item !== "Todos" && item.toLowerCase() === normalized.toLowerCase());
+      if (alreadyExists) {
+        return current;
+      }
+
+      return [...current, candidate];
+    });
+    setSelectedCategory(normalized);
+    setProductForm((current) => ({ ...current, category: candidate }));
+    resetCategoryForm();
   };
 
   const editProduct = (product: Product) => {
@@ -227,6 +292,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
       category: product.category,
       image: product.image,
       featured: Boolean(product.featured),
+      soldOut: Boolean(product.soldOut),
     });
   };
 
@@ -241,24 +307,36 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
       category: productForm.category,
       image: productForm.image || initialProducts[0].image,
       featured: productForm.featured,
+      soldOut: productForm.soldOut,
     };
 
     if (!nextProduct.name || !nextProduct.description || !Number.isFinite(nextProduct.price)) {
       return;
     }
 
+    const payload = {
+      ...nextProduct,
+      sold_out: nextProduct.soldOut,
+      soldOut: undefined,
+      id: selectedProductId ?? undefined,
+    };
+
     const response = await fetch("/api/products", {
       method: selectedProductId ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(selectedProductId ? nextProduct : { ...nextProduct, id: undefined }),
+      body: JSON.stringify(selectedProductId ? { ...payload, id: selectedProductId } : payload),
     });
 
     if (!response.ok) return;
-    const savedProduct = (await response.json()) as Product;
+    const savedProduct = (await response.json()) as Product & { sold_out?: boolean };
+    const normalizedProduct: Product = {
+      ...savedProduct,
+      soldOut: savedProduct.soldOut ?? savedProduct.sold_out ?? false,
+    };
     setProducts((current) =>
       selectedProductId
-        ? current.map((item) => (item.id === savedProduct.id ? savedProduct : item))
-        : [savedProduct, ...current],
+        ? current.map((item) => (item.id === normalizedProduct.id ? normalizedProduct : item))
+        : [normalizedProduct, ...current],
     );
     resetProductForm();
   };
@@ -297,6 +375,10 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
   };
 
   const isAdmin = session?.role === "admin";
+
+  const goBackToCategories = () => {
+    setSelectedCategory(null);
+  };
 
   if (adminOnly && !isAdmin) {
     return null;
@@ -350,71 +432,62 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
             </div>
           </div>
 
-          <div className="mt-5 grid gap-3 lg:grid-cols-[1.5fr_1fr_1fr_1fr]">
-            <label className="rounded-2xl border border-[#d41478]/15 bg-white/75 px-4 py-3 shadow-sm transition focus-within:border-[#d41478]/35 focus-within:bg-white">
-              <span className="mb-2 block text-[0.7rem] font-bold uppercase tracking-[0.25em] text-[#a4547b]">
-                Buscar por nombre o descripción
-              </span>
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="maquillaje, bolso, collar..."
-                className="w-full bg-transparent text-sm outline-none placeholder:text-[#be7b9e]"
-              />
-            </label>
+          {selectedCategory ? (
+            <div className="mt-5 grid gap-3 lg:grid-cols-[1.5fr_1fr_1fr]">
+              <label className="rounded-2xl border border-[#d41478]/15 bg-white/75 px-4 py-3 shadow-sm transition focus-within:border-[#d41478]/35 focus-within:bg-white">
+                <span className="mb-2 block text-[0.7rem] font-bold uppercase tracking-[0.25em] text-[#a4547b]">
+                  Buscar por nombre o descripción
+                </span>
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="maquillaje, bolso, collar..."
+                  className="w-full bg-transparent text-sm outline-none placeholder:text-[#be7b9e]"
+                />
+              </label>
 
-            <label className="rounded-2xl border border-[#d41478]/15 bg-white/75 px-4 py-3 shadow-sm transition focus-within:border-[#d41478]/35 focus-within:bg-white">
-              <span className="mb-2 block text-[0.7rem] font-bold uppercase tracking-[0.25em] text-[#a4547b]">
-                Categoría
-              </span>
-              <select
-                value={category}
-                onChange={(event) => setCategory(event.target.value as (typeof categories)[number])}
-                className="w-full bg-transparent text-sm outline-none"
-              >
-                {categories.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </label>
+              <label className="rounded-2xl border border-[#d41478]/15 bg-white/75 px-4 py-3 shadow-sm transition focus-within:border-[#d41478]/35 focus-within:bg-white">
+                <span className="mb-2 block text-[0.7rem] font-bold uppercase tracking-[0.25em] text-[#a4547b]">
+                  Ordenar
+                </span>
+                <select
+                  value={sortBy}
+                  onChange={(event) => setSortBy(event.target.value)}
+                  className="w-full bg-transparent text-sm outline-none"
+                >
+                  <option value="featured">Destacados</option>
+                  <option value="price-asc">Precio menor</option>
+                  <option value="price-desc">Precio mayor</option>
+                  <option value="name">Nombre</option>
+                </select>
+              </label>
 
-            <label className="rounded-2xl border border-[#d41478]/15 bg-white/75 px-4 py-3 shadow-sm transition focus-within:border-[#d41478]/35 focus-within:bg-white">
-              <span className="mb-2 block text-[0.7rem] font-bold uppercase tracking-[0.25em] text-[#a4547b]">
-                Ordenar
-              </span>
-              <select
-                value={sortBy}
-                onChange={(event) => setSortBy(event.target.value)}
-                className="w-full bg-transparent text-sm outline-none"
-              >
-                <option value="featured">Destacados</option>
-                <option value="price-asc">Precio menor</option>
-                <option value="price-desc">Precio mayor</option>
-                <option value="name">Nombre</option>
-              </select>
-            </label>
-
-            <label className="rounded-2xl border border-[#d41478]/15 bg-white/75 px-4 py-3 shadow-sm transition focus-within:border-[#d41478]/35 focus-within:bg-white">
-              <span className="mb-2 block text-[0.7rem] font-bold uppercase tracking-[0.25em] text-[#a4547b]">
-                Precio máximo: {formatPrice(maxPrice)}
-              </span>
-              <input
-                type="range"
-                min="5000"
-                max="80000"
-                step="1000"
-                value={maxPrice}
-                onChange={(event) => setMaxPrice(Number(event.target.value))}
-                className="w-full accent-[#d41478]"
-              />
-            </label>
-          </div>
+              <label className="rounded-2xl border border-[#d41478]/15 bg-white/75 px-4 py-3 shadow-sm transition focus-within:border-[#d41478]/35 focus-within:bg-white">
+                <span className="mb-2 block text-[0.7rem] font-bold uppercase tracking-[0.25em] text-[#a4547b]">
+                  Precio máximo: {formatPrice(maxPrice)}
+                </span>
+                <input
+                  type="range"
+                  min="5000"
+                  max="80000"
+                  step="1000"
+                  value={maxPrice}
+                  onChange={(event) => setMaxPrice(Number(event.target.value))}
+                  className="w-full accent-[#d41478]"
+                />
+              </label>
+            </div>
+          ) : null}
         </header>
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.6fr)]">
-          <section className="glass rounded-[2rem] p-5 lg:p-6">
+          <section
+            className={
+              selectedCategory
+                ? "glass rounded-[2rem] p-5 lg:p-6"
+                : "glass rounded-[2rem] p-5 lg:p-6 xl:col-span-2"
+            }
+          >
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <p className="text-[0.7rem] font-bold uppercase tracking-[0.3em] text-[#a4547b]">
@@ -534,125 +607,162 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
               </div>
             ) : null}
 
-            <div className="mt-5 grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
-              {filteredProducts.map((product) => (
-                <article
-                  key={product.id}
-                  className="group overflow-hidden rounded-[1.8rem] border border-[#d41478]/10 bg-white/85 shadow-[0_18px_40px_rgba(163,16,95,0.08)] transition-transform duration-300 hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(163,16,95,0.14)]"
-                >
-                  <div className="relative aspect-[4/3] overflow-hidden bg-gradient-to-br from-[#ffd1e6] via-[#f7a0c9] to-[#d41478]">
-                    <img
-                      src={productImage(product)}
-                      alt={product.name}
-                      className="h-full w-full object-cover opacity-95 transition duration-500 group-hover:scale-105"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#82164a]/45 via-transparent to-transparent" />
-                    {product.featured ? (
-                      <span className="absolute left-4 top-4 rounded-full bg-white/85 px-3 py-1 text-[0.65rem] font-bold uppercase tracking-[0.25em] text-[#b20b5f]">
-                        Destacado
+            {selectedCategory ? (
+              <>
+                <div className="mt-5 flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={goBackToCategories}
+                    className="inline-flex items-center gap-2 rounded-full border border-[#d41478]/20 bg-white px-3 py-2 text-sm font-semibold text-[#b20b5f]"
+                  >
+                    ← Volver atrás
+                  </button>
+                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#a4547b]">
+                    {selectedCategory}
+                  </p>
+                </div>
+
+                <div className="mt-5 grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                  {filteredProducts.map((product) => (
+                    <article
+                      key={product.id}
+                      className="group overflow-hidden rounded-[1.5rem] border border-[#d41478]/10 bg-white/85 shadow-[0_14px_30px_rgba(163,16,95,0.08)] transition-transform duration-300 hover:-translate-y-1 hover:shadow-[0_20px_45px_rgba(163,16,95,0.14)]"
+                    >
+                      <div className="relative aspect-[4/3] overflow-hidden bg-gradient-to-br from-[#ffd1e6] via-[#f7a0c9] to-[#d41478]">
+                        <img
+                          src={productImage(product)}
+                          alt={product.name}
+                          className="h-full w-full object-cover opacity-95 transition duration-500 group-hover:scale-105"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-[#82164a]/45 via-transparent to-transparent" />
+                        {product.featured ? (
+                          <span className="absolute left-3 top-3 rounded-full bg-white/85 px-2 py-1 text-[0.55rem] font-bold uppercase tracking-[0.2em] text-[#b20b5f]">
+                            Destacado
+                          </span>
+                        ) : null}
+                        {product.soldOut ? (
+                          <span className="absolute left-3 top-12 rounded-full bg-[#3d1b2d] px-2 py-1 text-[0.55rem] font-bold uppercase tracking-[0.2em] text-white">
+                            Agotado
+                          </span>
+                        ) : null}
+                        <span className="absolute right-3 top-3 rounded-full bg-[#d41478] px-2 py-1 text-[0.55rem] font-bold uppercase tracking-[0.18em] text-white">
+                          {product.category}
+                        </span>
+                      </div>
+
+                      <div className="space-y-3 p-3.5">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <h3 className="text-base font-semibold text-[#6d1047]">{product.name}</h3>
+                            <p className="mt-1 text-xs leading-5 text-[#8a5a78]">{product.description}</p>
+                          </div>
+                          <div className="rounded-xl bg-[#ffd2e7] px-2.5 py-1.5 text-right">
+                            <div className="text-[0.55rem] font-bold uppercase tracking-[0.18em] text-[#a4547b]">
+                              Precio
+                            </div>
+                            <div className="text-sm font-black text-[#b20b5f]">
+                              {formatPrice(product.price)}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => addToCart(product.id)}
+                            className="flex-1 rounded-full bg-[#d41478] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#b20b5f]"
+                          >
+                            Agregar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => buyNow(product)}
+                            className="rounded-full border border-[#d41478]/20 bg-white px-3 py-2 text-xs font-semibold text-[#b20b5f] transition hover:bg-[#fff4fa]"
+                          >
+                            Comprar
+                          </button>
+                          {isAdmin ? (
+                            <button
+                              type="button"
+                              onClick={() => editProduct(product)}
+                              className="rounded-full border border-[#d41478]/20 bg-white px-3 py-2 text-[10px] font-semibold text-[#6d1047] transition hover:bg-[#fff4fa]"
+                            >
+                              Editar
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="mt-5 grid w-full gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                {categoryCards.map((categoryCard) => (
+                  <button
+                    key={categoryCard.name}
+                    type="button"
+                    onClick={() => {
+                      setSelectedCategory(categoryCard.name);
+                    }}
+                    className="group relative w-full overflow-hidden rounded-[1.6rem] border border-[#d41478]/10 bg-white/85 text-left shadow-[0_14px_30px_rgba(163,16,95,0.08)] transition-transform duration-300 hover:-translate-y-1 hover:shadow-[0_20px_45px_rgba(163,16,95,0.14)]"
+                  >
+                    <div className="relative aspect-[4/3] overflow-hidden bg-gradient-to-br from-[#ffd1e6] via-[#f7a0c9] to-[#d41478]">
+                      <img
+                        src={categoryCard.image}
+                        alt={categoryCard.name}
+                        className="h-full w-full object-cover opacity-95 transition duration-500 group-hover:scale-105"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[#000000]/35 via-transparent to-transparent" />
+                      <span className="absolute inset-x-0 bottom-0 p-4 text-left text-2xl font-black text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.45)]">
+                        {categoryCard.name}
                       </span>
-                    ) : null}
-                    <span className="absolute right-4 top-4 rounded-full bg-[#d41478] px-3 py-1 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-white">
-                      {product.category}
-                    </span>
-                  </div>
-
-                  <div className="space-y-4 p-5">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <h3 className="text-xl font-semibold text-[#6d1047]">{product.name}</h3>
-                        <p className="mt-1 text-sm leading-6 text-[#8a5a78]">{product.description}</p>
-                      </div>
-                      <div className="rounded-2xl bg-[#ffd2e7] px-3 py-2 text-right">
-                        <div className="text-[0.65rem] font-bold uppercase tracking-[0.22em] text-[#a4547b]">
-                          Precio
-                        </div>
-                        <div className="text-lg font-black text-[#b20b5f]">
-                          {formatPrice(product.price)}
-                        </div>
-                      </div>
                     </div>
-
-                    <div className="flex flex-wrap items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => addToCart(product.id)}
-                        className="rounded-full bg-[#d41478] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#b20b5f]"
-                      >
-                        Agregar al carrito
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => buyNow(product)}
-                        className="rounded-full border border-[#d41478]/20 bg-white px-5 py-2.5 text-sm font-semibold text-[#b20b5f] transition hover:bg-[#fff4fa]"
-                      >
-                        Comprar
-                      </button>
-                      {isAdmin ? (
-                        <button
-                          type="button"
-                          onClick={() => editProduct(product)}
-                          className="rounded-full border border-[#d41478]/20 bg-white px-5 py-2.5 text-sm font-semibold text-[#6d1047] transition hover:bg-[#fff4fa]"
-                        >
-                          Editar
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </section>
 
-          <aside className="space-y-6">
+          {selectedCategory ? (
+            <aside className="space-y-6">
             {isAdmin ? (
               <section id="admin-panel" className="glass rounded-[2rem] p-5 lg:p-6">
                 <div>
                   <h2 className="heading-font text-3xl text-[#d41478]">Editor de catálogo</h2>
                 </div>
 
-                <form className="mt-5 space-y-3" onSubmit={saveProduct}>
-                  <label className="block">
-                    <span className="mb-2 block text-xs font-bold uppercase tracking-[0.22em] text-[#a4547b]">
-                      Nombre
-                    </span>
-                    <input
-                      value={productForm.name}
-                      onChange={(event) =>
-                        setProductForm((current) => ({ ...current, name: event.target.value }))
-                      }
-                      className="w-full rounded-2xl border border-[#d41478]/15 bg-white/80 px-4 py-3 text-sm outline-none"
-                    />
-                  </label>
+                <div className="mt-5 flex gap-2 rounded-full bg-[#fff2f8] p-1">
+                  <button
+                    type="button"
+                    onClick={() => setActiveAdminTab("product")}
+                    className={`flex-1 rounded-full px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] ${
+                      activeAdminTab === "product" ? "bg-[#d41478] text-white" : "text-[#b20b5f]"
+                    }`}
+                  >
+                    Agregar producto
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveAdminTab("category")}
+                    className={`flex-1 rounded-full px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] ${
+                      activeAdminTab === "category" ? "bg-[#d41478] text-white" : "text-[#b20b5f]"
+                    }`}
+                  >
+                    Agregar categoría
+                  </button>
+                </div>
 
-                  <label className="block">
-                    <span className="mb-2 block text-xs font-bold uppercase tracking-[0.22em] text-[#a4547b]">
-                      Descripción
-                    </span>
-                    <textarea
-                      value={productForm.description}
-                      onChange={(event) =>
-                        setProductForm((current) => ({
-                          ...current,
-                          description: event.target.value,
-                        }))
-                      }
-                      rows={3}
-                      className="w-full rounded-2xl border border-[#d41478]/15 bg-white/80 px-4 py-3 text-sm outline-none"
-                    />
-                  </label>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
+                {activeAdminTab === "product" ? (
+                  <form className="mt-5 space-y-3" onSubmit={saveProduct}>
                     <label className="block">
                       <span className="mb-2 block text-xs font-bold uppercase tracking-[0.22em] text-[#a4547b]">
-                        Precio
+                        Nombre
                       </span>
                       <input
-                        type="number"
-                        min="0"
-                        value={productForm.price}
+                        value={productForm.name}
                         onChange={(event) =>
-                          setProductForm((current) => ({ ...current, price: event.target.value }))
+                          setProductForm((current) => ({ ...current, name: event.target.value }))
                         }
                         className="w-full rounded-2xl border border-[#d41478]/15 bg-white/80 px-4 py-3 text-sm outline-none"
                       />
@@ -660,154 +770,318 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
 
                     <label className="block">
                       <span className="mb-2 block text-xs font-bold uppercase tracking-[0.22em] text-[#a4547b]">
-                        Categoría
+                        Descripción
                       </span>
-                      <select
-                        value={productForm.category}
+                      <textarea
+                        value={productForm.description}
                         onChange={(event) =>
                           setProductForm((current) => ({
                             ...current,
-                            category: event.target.value as Product["category"],
+                            description: event.target.value,
                           }))
                         }
+                        rows={3}
                         className="w-full rounded-2xl border border-[#d41478]/15 bg-white/80 px-4 py-3 text-sm outline-none"
-                      >
-                        {categories
-                          .filter((item): item is Product["category"] => item !== "Todos")
-                          .map((item) => (
-                            <option key={item} value={item}>
-                              {item}
-                            </option>
-                          ))}
-                      </select>
+                      />
                     </label>
-                  </div>
 
-                  <label className="block">
-                    <span className="mb-2 block text-xs font-bold uppercase tracking-[0.22em] text-[#a4547b]">
-                      Imagen de producto
-                    </span>
-                    <textarea
-                      value={productForm.image}
-                      onChange={(event) =>
-                        setProductForm((current) => ({ ...current, image: event.target.value }))
-                      }
-                      onPaste={handleImagePaste}
-                      placeholder="Pega una URL o una imagen aquí"
-                      rows={4}
-                      className="w-full rounded-2xl border border-[#d41478]/15 bg-white/80 px-4 py-3 text-sm outline-none"
-                    />
-                    <div className="mt-3 flex flex-wrap gap-3">
-                      <button
-                        type="button"
-                        onClick={() => imageInputRef.current?.click()}
-                        className="rounded-full border border-[#d41478]/20 px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[#b20b5f]"
-                      >
-                        Cargar desde computadora
-                      </button>
-                      <input
-                        ref={imageInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(event) => {
-                          const file = event.target.files?.[0];
-
-                          if (file) {
-                            applyImageFromFile(file);
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="block">
+                        <span className="mb-2 block text-xs font-bold uppercase tracking-[0.22em] text-[#a4547b]">
+                          Precio
+                        </span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={productForm.price}
+                          onChange={(event) =>
+                            setProductForm((current) => ({ ...current, price: event.target.value }))
                           }
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setProductForm((current) => ({ ...current, image: "" }))}
-                        className="rounded-full border border-[#d41478]/20 px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[#8f2457]"
-                      >
-                        Limpiar imagen
-                      </button>
-                    </div>
-                  </label>
-
-                  <div className="overflow-hidden rounded-[1.5rem] border border-[#d41478]/12 bg-white/75">
-                    <div className="aspect-[4/3] bg-gradient-to-br from-[#ffd1e6] via-[#f7a0c9] to-[#d41478]">
-                      <img
-                        src={productForm.image || initialProducts[0].image}
-                        alt="Vista previa"
-                        className="h-full w-full object-cover"
-                      />
-                    </div>
-                  </div>
-
-                  <label className="flex items-center gap-3 rounded-2xl bg-white/70 px-4 py-3 text-sm font-semibold text-[#7b4d68]">
-                    <input
-                      type="checkbox"
-                      checked={productForm.featured}
-                      onChange={(event) =>
-                        setProductForm((current) => ({ ...current, featured: event.target.checked }))
-                      }
-                      className="h-4 w-4 accent-[#d41478]"
-                    />
-                    Marcar como destacado
-                  </label>
-
-                  <div className="flex gap-3">
-                    <button
-                      type="submit"
-                      className="flex-1 rounded-full bg-[#d41478] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#b20b5f]"
-                    >
-                      {selectedProductId ? "Actualizar producto" : "Agregar producto"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={resetProductForm}
-                      className="rounded-full border border-[#d41478]/20 px-5 py-3 text-sm font-semibold text-[#b20b5f]"
-                    >
-                      Limpiar
-                    </button>
-                  </div>
-                </form>
-
-                <div className="mt-6 space-y-3">
-                  {products.map((product) => (
-                    <div key={product.id} className="rounded-2xl bg-white/75 p-4">
-                      <div className="flex items-start gap-3">
-                        <img
-                          src={productImage(product)}
-                          alt={product.name}
-                          className="h-14 w-14 rounded-2xl object-cover"
+                          className="w-full rounded-2xl border border-[#d41478]/15 bg-white/80 px-4 py-3 text-sm outline-none"
                         />
-                        <div className="min-w-0 flex-1">
-                          <p className="font-semibold text-[#6d1047]">{product.name}</p>
-                          <p className="text-sm text-[#8a5a78]">{formatPrice(product.price)}</p>
-                          <p className="mt-1 text-xs uppercase tracking-[0.2em] text-[#a4547b]">
-                            {product.category}
-                          </p>
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => editProduct(product)}
-                            className="rounded-full border border-[#d41478]/15 px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[#b20b5f]"
-                          >
-                            Editar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => deleteProduct(product.id)}
-                            className="rounded-full border border-[#d41478]/15 px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[#8f2457]"
-                          >
-                            Eliminar
-                          </button>
-                        </div>
+                      </label>
+
+                      <label className="block">
+                        <span className="mb-2 block text-xs font-bold uppercase tracking-[0.22em] text-[#a4547b]">
+                          Categoría
+                        </span>
+                        <select
+                          value={productForm.category}
+                          onChange={(event) =>
+                            setProductForm((current) => ({
+                              ...current,
+                              category: event.target.value as Product["category"],
+                            }))
+                          }
+                          className="w-full rounded-2xl border border-[#d41478]/15 bg-white/80 px-4 py-3 text-sm outline-none"
+                        >
+                          {catalogCategories
+                            .filter((item): item is Product["category"] => item !== "Todos")
+                            .map((item) => (
+                              <option key={item} value={item}>
+                                {item}
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-bold uppercase tracking-[0.22em] text-[#a4547b]">
+                        Imagen de producto
+                      </span>
+                      <textarea
+                        value={productForm.image}
+                        onChange={(event) =>
+                          setProductForm((current) => ({ ...current, image: event.target.value }))
+                        }
+                        onPaste={handleImagePaste}
+                        placeholder="Pega una URL o una imagen aquí"
+                        rows={4}
+                        className="w-full rounded-2xl border border-[#d41478]/15 bg-white/80 px-4 py-3 text-sm outline-none"
+                      />
+                      <div className="mt-3 flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          onClick={() => imageInputRef.current?.click()}
+                          className="rounded-full border border-[#d41478]/20 px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[#b20b5f]"
+                        >
+                          Cargar desde computadora
+                        </button>
+                        <input
+                          ref={imageInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+
+                            if (file) {
+                              applyImageFromFile(file);
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setProductForm((current) => ({ ...current, image: "" }))}
+                          className="rounded-full border border-[#d41478]/20 px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[#8f2457]"
+                        >
+                          Limpiar imagen
+                        </button>
+                      </div>
+                    </label>
+
+                    <div className="overflow-hidden rounded-[1.5rem] border border-[#d41478]/12 bg-white/75">
+                      <div className="aspect-[4/3] bg-gradient-to-br from-[#ffd1e6] via-[#f7a0c9] to-[#d41478]">
+                        <img
+                          src={productForm.image || initialProducts[0].image}
+                          alt="Vista previa"
+                          className="h-full w-full object-cover"
+                        />
                       </div>
                     </div>
-                  ))}
-                </div>
+
+                    <label className="flex items-center gap-3 rounded-2xl bg-white/70 px-4 py-3 text-sm font-semibold text-[#7b4d68]">
+                      <input
+                        type="checkbox"
+                        checked={productForm.featured}
+                        onChange={(event) =>
+                          setProductForm((current) => ({ ...current, featured: event.target.checked }))
+                        }
+                        className="h-4 w-4 accent-[#d41478]"
+                      />
+                      Marcar como destacado
+                    </label>
+
+                    <label className="flex items-center gap-3 rounded-2xl bg-white/70 px-4 py-3 text-sm font-semibold text-[#7b4d68]">
+                      <input
+                        type="checkbox"
+                        checked={productForm.soldOut}
+                        onChange={(event) =>
+                          setProductForm((current) => ({ ...current, soldOut: event.target.checked }))
+                        }
+                        className="h-4 w-4 accent-[#d41478]"
+                      />
+                      Producto agotado
+                    </label>
+
+                    <div className="flex gap-3">
+                      <button
+                        type="submit"
+                        className="flex-1 rounded-full bg-[#d41478] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#b20b5f]"
+                      >
+                        {selectedProductId ? "Actualizar producto" : "Agregar producto"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={resetProductForm}
+                        className="rounded-full border border-[#d41478]/20 px-5 py-3 text-sm font-semibold text-[#b20b5f]"
+                      >
+                        Limpiar
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <form className="mt-5 space-y-3" onSubmit={saveCategory}>
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-bold uppercase tracking-[0.22em] text-[#a4547b]">
+                        Nombre de la categoría
+                      </span>
+                      <input
+                        value={categoryForm.name}
+                        onChange={(event) =>
+                          setCategoryForm((current) => ({ ...current, name: event.target.value }))
+                        }
+                        className="w-full rounded-2xl border border-[#d41478]/15 bg-white/80 px-4 py-3 text-sm outline-none"
+                        placeholder="Ej: Bolsos, Maquillaje, Skincare"
+                      />
+                    </label>
+
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-bold uppercase tracking-[0.22em] text-[#a4547b]">
+                        Imagen de la categoría
+                      </span>
+                      <textarea
+                        value={categoryForm.image}
+                        onChange={(event) =>
+                          setCategoryForm((current) => ({ ...current, image: event.target.value }))
+                        }
+                        placeholder="Pega una URL de imagen o deja vacío para usar una genérica"
+                        rows={3}
+                        className="w-full rounded-2xl border border-[#d41478]/15 bg-white/80 px-4 py-3 text-sm outline-none"
+                      />
+                    </label>
+
+                    <div className="overflow-hidden rounded-[1.5rem] border border-[#d41478]/12 bg-white/75">
+                      <div className="aspect-[4/3] bg-gradient-to-br from-[#ffd1e6] via-[#f7a0c9] to-[#d41478]">
+                        <img
+                          src={categoryForm.image || initialProducts[0].image}
+                          alt="Vista previa de categoría"
+                          className="h-full w-full object-cover"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3">
+                      <button
+                        type="submit"
+                        className="flex-1 rounded-full bg-[#d41478] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#b20b5f]"
+                      >
+                        Guardar categoría
+                      </button>
+                      <button
+                        type="button"
+                        onClick={resetCategoryForm}
+                        className="rounded-full border border-[#d41478]/20 px-5 py-3 text-sm font-semibold text-[#b20b5f]"
+                      >
+                        Limpiar
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {activeAdminTab === "product" ? (
+                  <div className="mt-6 space-y-3">
+                    {products.map((product) => (
+                      <div key={product.id} className="rounded-2xl bg-white/75 p-4">
+                        <div className="flex items-start gap-3">
+                          <img
+                            src={productImage(product)}
+                            alt={product.name}
+                            className="h-14 w-14 rounded-2xl object-cover"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="font-semibold text-[#6d1047]">{product.name}</p>
+                            <p className="text-sm text-[#8a5a78]">{formatPrice(product.price)}</p>
+                            <p className="mt-1 text-xs uppercase tracking-[0.2em] text-[#a4547b]">
+                              {product.category}
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => editProduct(product)}
+                              className="rounded-full border border-[#d41478]/15 px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[#b20b5f]"
+                            >
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteProduct(product.id)}
+                              className="rounded-full border border-[#d41478]/15 px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[#8f2457]"
+                            >
+                              Eliminar
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-6 space-y-3">
+                    {catalogCategories
+                      .filter((item) => item !== "Todos")
+                      .map((item) => (
+                        <div key={item} className="rounded-2xl bg-white/75 p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="font-semibold text-[#6d1047]">{item}</p>
+                              <p className="text-xs uppercase tracking-[0.2em] text-[#a4547b]">Categoría</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setProductForm((current) => ({ ...current, category: item }));
+                                setSelectedCategory(item);
+                              }}
+                              className="rounded-full border border-[#d41478]/15 px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[#b20b5f]"
+                            >
+                              Usar
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
               </section>
             ) : null}
           </aside>
+          ) : null}
         </div>
       </section>
+
+      <footer className="mx-auto mt-8 w-full max-w-7xl px-4 pb-8 sm:px-6 lg:px-8">
+        <div className="glass rounded-[2rem] border border-white/60 px-5 py-6 text-[#6d1047] shadow-[0_18px_50px_rgba(163,16,95,0.08)] lg:px-7">
+          <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr_1fr] lg:items-start">
+            <div>
+              <p className="heading-font text-3xl text-[#d41478]">Magenta</p>
+              <p className="mt-2 text-sm leading-6 text-[#7d345a]">Productos de calidad, cerca tuyo.</p>
+            </div>
+
+            <div className="text-sm text-[#7d345a]">
+              <p className="font-semibold uppercase tracking-[0.18em] text-[#a4547b]">Ubicación</p>
+              <p className="mt-2 leading-6">Porteña, Córdoba</p>
+            </div>
+
+            <div className="space-y-2 text-sm text-[#7d345a]">
+              <p className="font-semibold uppercase tracking-[0.18em] text-[#a4547b]">Contacto</p>
+              <a href="https://www.instagram.com/magentabeautytienda/" target="_blank" rel="noreferrer" className="block transition hover:text-[#b20b5f]">
+                Instagram
+              </a>
+              <a href="https://wa.me/5493564419927" target="_blank" rel="noreferrer" className="block transition hover:text-[#b20b5f]">
+                WhatsApp
+              </a>
+            </div>
+          </div>
+
+          <div className="mt-6 border-t border-[#d41478]/15 pt-4 text-sm text-[#7d345a]">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <p>Horarios: Lun a Vier 10:00 a 12:00 y 17:00 a 19:30 · Sab 17:00 a 19:30</p>
+              <p className="font-medium text-[#8a5a78]">© 2026 Magenta · Todos los derechos reservados.</p>
+            </div>
+          </div>
+        </div>
+      </footer>
     </main>
   );
 }
