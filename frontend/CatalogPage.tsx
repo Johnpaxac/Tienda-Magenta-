@@ -87,7 +87,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
   );
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState("featured");
-  const [maxPrice, setMaxPrice] = useState(80000);
+  const [maxPrice, setMaxPrice] = useState(200000);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -97,7 +97,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
   const [categoryForm, setCategoryForm] = useState({ name: "", image: "" });
 
   useEffect(() => {
-    void fetch("/api/products")
+    void fetch("/api/products", { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) return null;
         return (await response.json()) as Product[];
@@ -106,9 +106,24 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
         if (nextProducts?.length) setProducts(nextProducts);
       });
 
+    void fetch("/api/categories", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return (await response.json()) as Array<{ name: string }>;
+      })
+      .then((nextCategories) => {
+        if (!nextCategories?.length) {
+          setCatalogCategories(categories as Array<"Todos" | Product["category"]>);
+          return;
+        }
+
+        const nextValues = ["Todos", ...nextCategories.map((item) => item.name)] as Array<"Todos" | Product["category"]>;
+        setCatalogCategories(Array.from(new Set(nextValues)) as Array<"Todos" | Product["category"]>);
+      });
+
     if (!adminOnly) return;
 
-    void fetch("/api/auth/session")
+    void fetch("/api/auth/session", { cache: "no-store" })
       .then((response) => response.json())
       .then((nextSession: AuthSession | null) => {
         if (nextSession?.role === "admin") {
@@ -259,7 +274,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
     setCategoryForm({ name: "", image: "" });
   };
 
-  const saveCategory = (event: React.FormEvent<HTMLFormElement>) => {
+  const saveCategory = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const nextName = categoryForm.name.trim();
 
@@ -270,16 +285,30 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
     const normalized = nextName.replace(/\s+/g, " ");
     const candidate = normalized as Product["category"];
 
+    const response = await fetch("/api/categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: normalized, image: categoryForm.image || "" }),
+    });
+
+    const responseBody = (await response.json().catch(() => ({}))) as { error?: string; name?: string };
+
+    if (!response.ok) {
+      window.alert(responseBody.error ?? "No se pudo guardar la categoría.");
+      return;
+    }
+
+    const savedName = responseBody.name ?? normalized;
     setCatalogCategories((current) => {
-      const alreadyExists = current.some((item) => item !== "Todos" && item.toLowerCase() === normalized.toLowerCase());
+      const alreadyExists = current.some((item) => item !== "Todos" && item.toLowerCase() === savedName.toLowerCase());
       if (alreadyExists) {
         return current;
       }
 
-      return [...current, candidate];
+      return [...current, savedName as Product["category"]];
     });
-    setSelectedCategory(normalized);
-    setProductForm((current) => ({ ...current, category: candidate }));
+    setSelectedCategory(savedName);
+    setProductForm((current) => ({ ...current, category: savedName as Product["category"] }));
     resetCategoryForm();
   };
 
@@ -316,19 +345,26 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
 
     const payload = {
       ...nextProduct,
+      soldOut: nextProduct.soldOut,
       sold_out: nextProduct.soldOut,
-      soldOut: undefined,
       id: selectedProductId ?? undefined,
     };
 
     const response = await fetch("/api/products", {
       method: selectedProductId ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
+      cache: "no-store",
       body: JSON.stringify(selectedProductId ? { ...payload, id: selectedProductId } : payload),
     });
 
-    if (!response.ok) return;
-    const savedProduct = (await response.json()) as Product & { sold_out?: boolean };
+    const responseBody = (await response.json().catch(() => ({}))) as { error?: string };
+
+    if (!response.ok) {
+      window.alert(responseBody.error ?? "No se pudo guardar el producto.");
+      return;
+    }
+
+    const savedProduct = responseBody as Product & { sold_out?: boolean };
     const normalizedProduct: Product = {
       ...savedProduct,
       soldOut: savedProduct.soldOut ?? savedProduct.sold_out ?? false,
@@ -339,6 +375,11 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
         : [normalizedProduct, ...current],
     );
     resetProductForm();
+  };
+
+  const cancelProductEdit = () => {
+    setSelectedProductId(null);
+    setProductForm({ ...emptyProductForm, category: productForm.category || "Ojos" });
   };
 
   const deleteProduct = async (productId: number) => {
@@ -469,7 +510,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                 <input
                   type="range"
                   min="5000"
-                  max="80000"
+                  max="200000"
                   step="1000"
                   value={maxPrice}
                   onChange={(event) => setMaxPrice(Number(event.target.value))}
@@ -640,11 +681,6 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                             Destacado
                           </span>
                         ) : null}
-                        {product.soldOut ? (
-                          <span className="absolute left-3 top-12 rounded-full bg-[#3d1b2d] px-2 py-1 text-[0.55rem] font-bold uppercase tracking-[0.2em] text-white">
-                            Agotado
-                          </span>
-                        ) : null}
                         <span className="absolute right-3 top-3 rounded-full bg-[#d41478] px-2 py-1 text-[0.55rem] font-bold uppercase tracking-[0.18em] text-white">
                           {product.category}
                         </span>
@@ -653,7 +689,14 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                       <div className="space-y-3 p-3.5">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <h3 className="text-base font-semibold text-[#6d1047]">{product.name}</h3>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="text-base font-semibold text-[#6d1047]">{product.name}</h3>
+                              {product.soldOut ? (
+                                <span className="inline-flex rounded-full bg-[#3d1b2d] px-2 py-1 text-[0.55rem] font-bold uppercase tracking-[0.2em] text-white">
+                                  Agotado
+                                </span>
+                              ) : null}
+                            </div>
                             <p className="mt-1 text-xs leading-5 text-[#8a5a78]">{product.description}</p>
                           </div>
                           <div className="rounded-xl bg-[#ffd2e7] px-2.5 py-1.5 text-right">
@@ -912,13 +955,23 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                       >
                         {selectedProductId ? "Actualizar producto" : "Agregar producto"}
                       </button>
-                      <button
-                        type="button"
-                        onClick={resetProductForm}
-                        className="rounded-full border border-[#d41478]/20 px-5 py-3 text-sm font-semibold text-[#b20b5f]"
-                      >
-                        Limpiar
-                      </button>
+                      {selectedProductId ? (
+                        <button
+                          type="button"
+                          onClick={cancelProductEdit}
+                          className="rounded-full border border-[#d41478]/20 px-5 py-3 text-sm font-semibold text-[#b20b5f]"
+                        >
+                          Cancelar edición
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={resetProductForm}
+                          className="rounded-full border border-[#d41478]/20 px-5 py-3 text-sm font-semibold text-[#b20b5f]"
+                        >
+                          Limpiar
+                        </button>
+                      )}
                     </div>
                   </form>
                 ) : (
@@ -996,6 +1049,11 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                             <p className="mt-1 text-xs uppercase tracking-[0.2em] text-[#a4547b]">
                               {product.category}
                             </p>
+                            {product.soldOut ? (
+                              <span className="mt-2 inline-flex rounded-full bg-[#3d1b2d] px-2 py-1 text-[0.55rem] font-bold uppercase tracking-[0.2em] text-white">
+                                Agotado
+                              </span>
+                            ) : null}
                           </div>
                           <div className="flex gap-2">
                             <button
