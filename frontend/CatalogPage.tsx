@@ -18,6 +18,7 @@ type ProductForm = {
   image: string;
   featured: boolean;
   soldOut: boolean;
+  stockQuantity: string;
 };
 
 const emptyProductForm: ProductForm = {
@@ -28,6 +29,7 @@ const emptyProductForm: ProductForm = {
   image: "",
   featured: false,
   soldOut: false,
+  stockQuantity: "0",
 };
 
 function formatPrice(amount: number) {
@@ -79,14 +81,17 @@ function readFileAsDataUrl(file: File) {
 export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean }) {
   const router = useRouter();
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const categoryImageInputRef = useRef<HTMLInputElement>(null);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [products, setProducts] = useState(initialProducts);
   const [query, setQuery] = useState("");
   const [catalogCategories, setCatalogCategories] = useState<Array<"Todos" | Product["category"]>>(
     categories as Array<"Todos" | Product["category"]>,
   );
+  const [categoryImages, setCategoryImages] = useState<Record<string, string>>({});
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState("featured");
+  const [minPrice, setMinPrice] = useState(0);
   const [maxPrice, setMaxPrice] = useState(200000);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
@@ -95,6 +100,13 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
   const [activeAdminTab, setActiveAdminTab] = useState<"product" | "category">("product");
   const [productForm, setProductForm] = useState<ProductForm>(emptyProductForm);
   const [categoryForm, setCategoryForm] = useState({ name: "", image: "" });
+  const [stockOpen, setStockOpen] = useState(false);
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
+  const [expandedStockCategories, setExpandedStockCategories] = useState<string[]>([]);
+  const [stockDrafts, setStockDrafts] = useState<Record<number, string>>({});
+  const [categoryDrafts, setCategoryDrafts] = useState<Record<string, { name: string; image: string }>>({});
+  const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
+  const [productToDelete, setProductToDelete] = useState<Product | null>(null);
 
   useEffect(() => {
     void fetch("/api/products", { cache: "no-store" })
@@ -109,7 +121,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
     void fetch("/api/categories", { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) return null;
-        return (await response.json()) as Array<{ name: string }>;
+        return (await response.json()) as Array<{ name: string; image?: string }>;
       })
       .then((nextCategories) => {
         if (!nextCategories?.length) {
@@ -117,6 +129,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
           return;
         }
 
+        setCategoryImages(Object.fromEntries(nextCategories.map((item) => [item.name, item.image ?? ""])));
         const nextValues = ["Todos", ...nextCategories.map((item) => item.name)] as Array<"Todos" | Product["category"]>;
         setCatalogCategories(Array.from(new Set(nextValues)) as Array<"Todos" | Product["category"]>);
       });
@@ -146,10 +159,10 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
         const product = products.find((item) => item.category === name) ?? initialProducts[0];
         return {
           name,
-          image: productImage(product),
+          image: categoryImages[name] || productImage(product),
         };
       }),
-    [products, visibleCategories],
+    [categoryImages, products, visibleCategories],
   );
 
   const filteredProducts = useMemo(() => {
@@ -159,7 +172,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
     return [...products]
       .filter((product) => {
         const matchesCategory = currentCategory === "Todos" || product.category === currentCategory;
-        const matchesPrice = product.price <= maxPrice;
+        const matchesPrice = product.price >= minPrice && product.price <= maxPrice;
         const matchesQuery =
           !normalizedQuery ||
           product.name.toLowerCase().includes(normalizedQuery) ||
@@ -173,7 +186,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
         if (sortBy === "name") return first.name.localeCompare(second.name);
         return Number(second.featured) - Number(first.featured) || first.name.localeCompare(second.name);
       });
-  }, [maxPrice, products, query, selectedCategory, sortBy]);
+  }, [maxPrice, minPrice, products, query, selectedCategory, sortBy]);
 
   const cartItems = useMemo(
     () =>
@@ -209,6 +222,9 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
   };
 
   const addToCart = (productId: number) => {
+    const product = products.find((item) => item.id === productId);
+    if (!product || Number(product.stockQuantity ?? 0) <= 0 || product.soldOut) return;
+
     setCart((current) => {
       const existing = current.find((item) => item.productId === productId);
 
@@ -237,6 +253,8 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
   };
 
   const buyNow = (product: Product) => {
+    if (Number(product.stockQuantity ?? 0) <= 0 || product.soldOut) return;
+
     const message = [
       "Holaaa, me gustaría este producto, ¿está disponible?",
       "",
@@ -322,7 +340,102 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
       image: product.image,
       featured: Boolean(product.featured),
       soldOut: Boolean(product.soldOut),
+      stockQuantity: String(product.stockQuantity ?? 0),
     });
+  };
+
+  const updateProductStock = async (product: Product) => {
+    const nextStock = Number(stockDrafts[product.id] ?? product.stockQuantity ?? 0);
+    if (!Number.isInteger(nextStock) || nextStock < 0) {
+      window.alert("El stock debe ser un número entero igual o mayor que cero.");
+      return;
+    }
+
+    const response = await fetch("/api/products", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...product, id: product.id, stockQuantity: nextStock }),
+    });
+
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      window.alert(body.error ?? "No se pudo actualizar el stock.");
+      return;
+    }
+
+    const savedProduct = (await response.json()) as Product & { sold_out?: boolean };
+    setProducts((current) =>
+      current.map((item) =>
+        item.id === product.id
+          ? {
+              ...item,
+              ...savedProduct,
+              stockQuantity: Number(savedProduct.stockQuantity ?? nextStock),
+              soldOut: Number(savedProduct.stockQuantity ?? nextStock) === 0,
+            }
+          : item,
+      ),
+    );
+  };
+
+  const updateCategory = async (oldName: string) => {
+    const draft = categoryDrafts[oldName] ?? { name: oldName, image: categoryImages[oldName] ?? "" };
+    const name = draft.name.trim().replace(/\s+/g, " ");
+    if (!name) {
+      window.alert("El nombre de la categoría no puede estar vacío.");
+      return;
+    }
+
+    const response = await fetch("/api/categories", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ oldName, name, image: draft.image }),
+    });
+    const body = (await response.json().catch(() => ({}))) as { error?: string; name?: string; image?: string };
+    if (!response.ok || !body.name) {
+      window.alert(body.error ?? "No se pudo editar la categoría.");
+      return;
+    }
+
+    setCatalogCategories((current) => current.map((item) => (item === oldName ? body.name as Product["category"] : item)));
+    setCategoryImages((current) => {
+      const next = { ...current };
+      delete next[oldName];
+      next[body.name as string] = body.image ?? "";
+      return next;
+    });
+    setProducts((current) => current.map((product) => product.category === oldName ? { ...product, category: body.name as Product["category"] } : product));
+    if (selectedCategory === oldName) setSelectedCategory(body.name);
+    setCategoryDrafts((current) => {
+      const next = { ...current };
+      delete next[oldName];
+      return next;
+    });
+  };
+
+  const deleteCategory = async () => {
+    if (!categoryToDelete) return;
+
+    const response = await fetch("/api/categories", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: categoryToDelete }),
+    });
+    const body = (await response.json().catch(() => ({}))) as { error?: string };
+
+    if (!response.ok) {
+      window.alert(body.error ?? "No se pudo eliminar la categoría.");
+      return;
+    }
+
+    setCatalogCategories((current) => current.filter((item) => item !== categoryToDelete));
+    setCategoryImages((current) => {
+      const next = { ...current };
+      delete next[categoryToDelete];
+      return next;
+    });
+    if (selectedCategory === categoryToDelete) setSelectedCategory(null);
+    setCategoryToDelete(null);
   };
 
   const saveProduct = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -336,17 +449,26 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
       category: productForm.category,
       image: productForm.image || initialProducts[0].image,
       featured: productForm.featured,
-      soldOut: productForm.soldOut,
+      soldOut: Number(productForm.stockQuantity) === 0,
+      stockQuantity: Number(productForm.stockQuantity),
     };
 
-    if (!nextProduct.name || !nextProduct.description || !Number.isFinite(nextProduct.price)) {
+    if (
+      !nextProduct.name ||
+      !nextProduct.description ||
+      !Number.isFinite(nextProduct.price) ||
+      nextProduct.price < 0 ||
+      !Number.isInteger(Number(productForm.stockQuantity)) ||
+      Number(productForm.stockQuantity) < 0
+    ) {
+      window.alert("Completá los datos correctamente. El precio y el stock no pueden ser negativos.");
       return;
     }
 
     const payload = {
       ...nextProduct,
-      soldOut: nextProduct.soldOut,
-      sold_out: nextProduct.soldOut,
+      soldOut: nextProduct.stockQuantity === 0,
+      sold_out: nextProduct.stockQuantity === 0,
       id: selectedProductId ?? undefined,
     };
 
@@ -398,9 +520,21 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
     }
   };
 
+  const confirmDeleteProduct = async () => {
+    if (!productToDelete) return;
+    await deleteProduct(productToDelete.id);
+    setProductToDelete(null);
+  };
+
   const applyImageFromFile = (file: File) => {
     void readFileAsDataUrl(file).then((dataUrl) => {
       setProductForm((current) => ({ ...current, image: dataUrl }));
+    });
+  };
+
+  const applyCategoryImageFromFile = (file: File) => {
+    void readFileAsDataUrl(file).then((dataUrl) => {
+      setCategoryForm((current) => ({ ...current, image: dataUrl }));
     });
   };
 
@@ -416,6 +550,102 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
   };
 
   const isAdmin = session?.role === "admin";
+
+  const stockPanel = isAdmin && stockOpen ? (
+    <div className="mt-4 rounded-[1.6rem] border border-[#d41478]/12 bg-white/80 p-4 shadow-[0_18px_50px_rgba(163,16,95,0.08)]">
+      <p className="text-[0.7rem] font-bold uppercase tracking-[0.3em] text-[#a4547b]">Stock por categoría</p>
+      <div className="mt-3 space-y-2">
+        {catalogCategories.filter((item) => item !== "Todos").map((category) => {
+          const categoryProducts = products.filter((product) => product.category === category);
+          const expanded = expandedStockCategories.includes(category);
+
+          return (
+            <div key={category} className="rounded-xl border border-[#d41478]/10 bg-white/75">
+              <button
+                type="button"
+                onClick={() =>
+                  setExpandedStockCategories((current) =>
+                    expanded ? current.filter((item) => item !== category) : [...current, category],
+                  )
+                }
+                className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-semibold text-[#6d1047]"
+                aria-expanded={expanded}
+              >
+                <span>{category}</span>
+                <span aria-hidden="true">{expanded ? "↑" : "↓"}</span>
+              </button>
+              {expanded ? (
+                <div className="space-y-2 border-t border-[#d41478]/10 px-4 py-3">
+                  {categoryProducts.length ? categoryProducts.map((product) => (
+                    <div key={product.id} className="flex flex-wrap items-center gap-3">
+                      <img src={productImage(product)} alt="" className="h-10 w-10 rounded-xl object-cover" />
+                      <span className="min-w-0 flex-1 truncate text-sm text-[#7d345a]">{product.name}</span>
+                      <input
+                        aria-label={`Stock de ${product.name}`}
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={stockDrafts[product.id] ?? String(product.stockQuantity ?? 0)}
+                        onChange={(event) =>
+                          setStockDrafts((current) => ({ ...current, [product.id]: event.target.value }))
+                        }
+                        className="w-20 rounded-xl border border-[#d41478]/15 bg-white px-2 py-2 text-center text-sm outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void updateProductStock(product)}
+                        className="rounded-full bg-[#d41478] px-3 py-2 text-xs font-semibold text-white"
+                      >
+                        Guardar
+                      </button>
+                    </div>
+                  )) : <p className="text-xs text-[#8a5a78]">No hay productos.</p>}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  ) : null;
+
+  const categoriesPanel = isAdmin && categoriesOpen ? (
+    <div className="mt-4 rounded-[1.6rem] border border-[#d41478]/12 bg-white/80 p-4 shadow-[0_18px_50px_rgba(163,16,95,0.08)]">
+      <p className="text-[0.7rem] font-bold uppercase tracking-[0.3em] text-[#a4547b]">Editar categorías</p>
+      <div className="mt-3 space-y-3">
+        {catalogCategories.filter((item) => item !== "Todos").map((category) => {
+          const draft = categoryDrafts[category] ?? { name: category, image: categoryImages[category] ?? "" };
+
+          return (
+            <div key={category} className="grid gap-3 rounded-2xl border border-[#d41478]/10 bg-white/75 p-3 sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-center">
+              <img src={categoryImages[category] || productImage(products.find((product) => product.category === category) ?? initialProducts[0])} alt="" className="h-12 w-12 rounded-xl object-cover" />
+              <input
+                aria-label={`Nombre de categoría ${category}`}
+                value={draft.name}
+                onChange={(event) => setCategoryDrafts((current) => ({ ...current, [category]: { ...draft, name: event.target.value } }))}
+                className="min-w-0 rounded-xl border border-[#d41478]/15 bg-white px-3 py-2 text-sm outline-none"
+              />
+              <input
+                aria-label={`Imagen de categoría ${category}`}
+                placeholder="URL de imagen"
+                value={draft.image}
+                onChange={(event) => setCategoryDrafts((current) => ({ ...current, [category]: { ...draft, image: event.target.value } }))}
+                className="min-w-0 rounded-xl border border-[#d41478]/15 bg-white px-3 py-2 text-sm outline-none"
+              />
+              <div className="flex flex-wrap gap-2 sm:justify-end">
+                <button type="button" onClick={() => void updateCategory(category)} className="rounded-full bg-[#d41478] px-4 py-2 text-xs font-semibold text-white">
+                  Guardar
+                </button>
+                <button type="button" onClick={() => setCategoryToDelete(category)} className="rounded-full border border-[#d41478]/20 px-4 py-2 text-xs font-semibold text-[#8f2457]">
+                  Borrar
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  ) : null;
 
   const goBackToCategories = () => {
     setSelectedCategory(null);
@@ -503,20 +733,33 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                 </select>
               </label>
 
-              <label className="rounded-2xl border border-[#d41478]/15 bg-white/75 px-4 py-3 shadow-sm transition focus-within:border-[#d41478]/35 focus-within:bg-white">
-                <span className="mb-2 block text-[0.7rem] font-bold uppercase tracking-[0.25em] text-[#a4547b]">
-                  Precio máximo: {formatPrice(maxPrice)}
-                </span>
-                <input
-                  type="range"
-                  min="5000"
-                  max="200000"
-                  step="1000"
-                  value={maxPrice}
-                  onChange={(event) => setMaxPrice(Number(event.target.value))}
-                  className="w-full accent-[#d41478]"
-                />
-              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="rounded-2xl border border-[#d41478]/15 bg-white/75 px-4 py-3 shadow-sm transition focus-within:border-[#d41478]/35 focus-within:bg-white">
+                  <span className="mb-2 block text-[0.7rem] font-bold uppercase tracking-[0.25em] text-[#a4547b]">
+                    Precio mínimo
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    max={maxPrice}
+                    value={minPrice}
+                    onChange={(event) => setMinPrice(Math.max(0, Number(event.target.value)))}
+                    className="w-full bg-transparent text-sm outline-none"
+                  />
+                </label>
+                <label className="rounded-2xl border border-[#d41478]/15 bg-white/75 px-4 py-3 shadow-sm transition focus-within:border-[#d41478]/35 focus-within:bg-white">
+                  <span className="mb-2 block text-[0.7rem] font-bold uppercase tracking-[0.25em] text-[#a4547b]">
+                    Precio máximo
+                  </span>
+                  <input
+                    type="number"
+                    min={minPrice}
+                    value={maxPrice}
+                    onChange={(event) => setMaxPrice(Math.max(minPrice, Number(event.target.value)))}
+                    className="w-full bg-transparent text-sm outline-none"
+                  />
+                </label>
+              </div>
             </div>
           ) : null}
         </header>
@@ -540,23 +783,50 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                 <p className="text-sm text-[#7e4770]">
                   {filteredProducts.length} resultados según los filtros aplicados.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => setCartOpen((current) => !current)}
-                  className="inline-flex items-center gap-3 rounded-full border border-[#d41478]/20 bg-white px-4 py-2 text-sm font-semibold text-[#b20b5f] shadow-sm transition hover:bg-[#fff4fa]"
-                  aria-expanded={cartOpen}
-                  aria-controls="cart-panel"
-                >
-                  <CartIcon />
-                  <span>Carrito</span>
-                  {cartCount > 0 ? (
-                    <span className="rounded-full bg-[#d41478] px-2.5 py-0.5 text-xs font-bold text-white">
-                      {cartCount}
-                    </span>
+                <div className="flex max-w-full flex-wrap gap-2 sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setCartOpen((current) => !current)}
+                    className="inline-flex items-center gap-3 rounded-full border border-[#d41478]/20 bg-white px-4 py-2 text-sm font-semibold text-[#b20b5f] shadow-sm transition hover:bg-[#fff4fa]"
+                    aria-expanded={cartOpen}
+                    aria-controls="cart-panel"
+                  >
+                    <CartIcon />
+                    <span>Carrito</span>
+                    {cartCount > 0 ? (
+                      <span className="rounded-full bg-[#d41478] px-2.5 py-0.5 text-xs font-bold text-white">
+                        {cartCount}
+                      </span>
+                    ) : null}
+                  </button>
+                  {isAdmin ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setStockOpen((current) => !current)}
+                        className="inline-flex items-center gap-2 rounded-full border border-[#d41478]/20 bg-white px-4 py-2 text-sm font-semibold text-[#b20b5f] shadow-sm transition hover:bg-[#fff4fa]"
+                        aria-expanded={stockOpen}
+                      >
+                        <span aria-hidden="true">▣</span>
+                        <span>Stock</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCategoriesOpen((current) => !current)}
+                        className="inline-flex items-center gap-2 rounded-full border border-[#d41478]/20 bg-white px-4 py-2 text-sm font-semibold text-[#b20b5f] shadow-sm transition hover:bg-[#fff4fa]"
+                        aria-expanded={categoriesOpen}
+                      >
+                        <span aria-hidden="true">▤</span>
+                        <span>Categorías</span>
+                      </button>
+                    </>
                   ) : null}
-                </button>
+                </div>
               </div>
             </div>
+
+            {stockPanel}
+            {categoriesPanel}
 
             {cartOpen ? (
               <div
@@ -589,7 +859,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                     cartItems.map((item) => (
                       <div key={item.productId} className="flex gap-3 rounded-2xl bg-[#fff7fb] p-3">
                         <img
-                          src={item.product.image}
+                          src={productImage(item.product)}
                           alt={item.product.name}
                           className="h-14 w-14 rounded-2xl object-cover"
                         />
@@ -691,7 +961,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
                               <h3 className="text-base font-semibold text-[#6d1047]">{product.name}</h3>
-                              {product.soldOut ? (
+                              {Number(product.stockQuantity ?? 0) <= 0 ? (
                                 <span className="inline-flex rounded-full bg-[#3d1b2d] px-2 py-1 text-[0.55rem] font-bold uppercase tracking-[0.2em] text-white">
                                   Agotado
                                 </span>
@@ -706,6 +976,11 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                             <div className="text-sm font-black text-[#b20b5f]">
                               {formatPrice(product.price)}
                             </div>
+                            <p className="mt-2 text-xs font-semibold text-[#8a5a78]">
+                              {Number(product.stockQuantity ?? 0) > 0
+                                ? `Stock disponible: ${product.stockQuantity}`
+                                : "Agotado"}
+                            </p>
                           </div>
                         </div>
 
@@ -713,14 +988,16 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                           <button
                             type="button"
                             onClick={() => addToCart(product.id)}
-                            className="flex-1 rounded-full bg-[#d41478] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#b20b5f]"
+                            disabled={Number(product.stockQuantity ?? 0) <= 0}
+                            className="flex-1 rounded-full bg-[#d41478] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#b20b5f] disabled:cursor-not-allowed disabled:bg-[#c7a9b8]"
                           >
                             Agregar
                           </button>
                           <button
                             type="button"
                             onClick={() => buyNow(product)}
-                            className="rounded-full border border-[#d41478]/20 bg-white px-3 py-2 text-xs font-semibold text-[#b20b5f] transition hover:bg-[#fff4fa]"
+                            disabled={Number(product.stockQuantity ?? 0) <= 0}
+                            className="rounded-full border border-[#d41478]/20 bg-white px-3 py-2 text-xs font-semibold text-[#b20b5f] transition hover:bg-[#fff4fa] disabled:cursor-not-allowed disabled:border-[#c7a9b8] disabled:text-[#9f8593]"
                           >
                             Comprar
                           </button>
@@ -846,6 +1123,22 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
 
                       <label className="block">
                         <span className="mb-2 block text-xs font-bold uppercase tracking-[0.22em] text-[#a4547b]">
+                          Stock disponible
+                        </span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={productForm.stockQuantity}
+                          onChange={(event) =>
+                            setProductForm((current) => ({ ...current, stockQuantity: event.target.value }))
+                          }
+                          className="w-full rounded-2xl border border-[#d41478]/15 bg-white/80 px-4 py-3 text-sm outline-none"
+                        />
+                      </label>
+
+                      <label className="block">
+                        <span className="mb-2 block text-xs font-bold uppercase tracking-[0.22em] text-[#a4547b]">
                           Categoría
                         </span>
                         <select
@@ -936,18 +1229,6 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                       Marcar como destacado
                     </label>
 
-                    <label className="flex items-center gap-3 rounded-2xl bg-white/70 px-4 py-3 text-sm font-semibold text-[#7b4d68]">
-                      <input
-                        type="checkbox"
-                        checked={productForm.soldOut}
-                        onChange={(event) =>
-                          setProductForm((current) => ({ ...current, soldOut: event.target.checked }))
-                        }
-                        className="h-4 w-4 accent-[#d41478]"
-                      />
-                      Producto agotado
-                    </label>
-
                     <div className="flex gap-3">
                       <button
                         type="submit"
@@ -1003,6 +1284,33 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                         rows={3}
                         className="w-full rounded-2xl border border-[#d41478]/15 bg-white/80 px-4 py-3 text-sm outline-none"
                       />
+                      <div className="mt-3 flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          onClick={() => categoryImageInputRef.current?.click()}
+                          className="rounded-full border border-[#d41478]/20 px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[#b20b5f]"
+                        >
+                          Subir foto
+                        </button>
+                        <input
+                          ref={categoryImageInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            if (file) applyCategoryImageFromFile(file);
+                            event.target.value = "";
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setCategoryForm((current) => ({ ...current, image: "" }))}
+                          className="rounded-full border border-[#d41478]/20 px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[#8f2457]"
+                        >
+                          Limpiar imagen
+                        </button>
+                      </div>
                     </label>
 
                     <div className="overflow-hidden rounded-[1.5rem] border border-[#d41478]/12 bg-white/75">
@@ -1037,7 +1345,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                   <div className="mt-6 space-y-3">
                     {products.map((product) => (
                       <div key={product.id} className="rounded-2xl bg-white/75 p-4">
-                        <div className="flex items-start gap-3">
+                        <div className="flex flex-wrap items-start gap-3">
                           <img
                             src={productImage(product)}
                             alt={product.name}
@@ -1046,6 +1354,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                           <div className="min-w-0 flex-1">
                             <p className="font-semibold text-[#6d1047]">{product.name}</p>
                             <p className="text-sm text-[#8a5a78]">{formatPrice(product.price)}</p>
+                            <p className="text-xs font-semibold text-[#8a5a78]">Stock: {product.stockQuantity ?? 0}</p>
                             <p className="mt-1 text-xs uppercase tracking-[0.2em] text-[#a4547b]">
                               {product.category}
                             </p>
@@ -1055,7 +1364,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                               </span>
                             ) : null}
                           </div>
-                          <div className="flex gap-2">
+                          <div className="flex w-full flex-wrap gap-2 sm:w-auto">
                             <button
                               type="button"
                               onClick={() => editProduct(product)}
@@ -1065,7 +1374,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                             </button>
                             <button
                               type="button"
-                              onClick={() => deleteProduct(product.id)}
+                              onClick={() => setProductToDelete(product)}
                               className="rounded-full border border-[#d41478]/15 px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[#8f2457]"
                             >
                               Eliminar
@@ -1107,6 +1416,60 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
           ) : null}
         </div>
       </section>
+
+      {productToDelete ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#3d1b2d]/35 px-4" role="dialog" aria-modal="true" aria-labelledby="delete-product-title">
+          <div className="w-full max-w-md rounded-[1.75rem] border border-white/70 bg-[#fffafd] p-6 shadow-2xl">
+            <h2 id="delete-product-title" className="heading-font text-3xl text-[#d41478]">¿Eliminar producto?</h2>
+            <p className="mt-3 text-sm leading-6 text-[#7d345a]">
+              Se va a eliminar <strong>{productToDelete.name}</strong>. Esta acción no se puede deshacer.
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setProductToDelete(null)}
+                className="rounded-full border border-[#d41478]/20 px-5 py-3 text-sm font-semibold text-[#b20b5f]"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmDeleteProduct()}
+                className="rounded-full bg-[#d41478] px-5 py-3 text-sm font-semibold text-white"
+              >
+                Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {categoryToDelete ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#3d1b2d]/35 px-4" role="dialog" aria-modal="true" aria-labelledby="delete-category-title">
+          <div className="w-full max-w-md rounded-[1.75rem] border border-white/70 bg-[#fffafd] p-6 shadow-2xl">
+            <h2 id="delete-category-title" className="heading-font text-3xl text-[#d41478]">¿Borrar categoría?</h2>
+            <p className="mt-3 text-sm leading-6 text-[#7d345a]">
+              Se va a borrar <strong>{categoryToDelete}</strong>. Solo se podrá eliminar si no tiene productos.
+            </p>
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setCategoryToDelete(null)}
+                className="rounded-full border border-[#d41478]/20 px-5 py-3 text-sm font-semibold text-[#b20b5f]"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void deleteCategory()}
+                className="rounded-full bg-[#d41478] px-5 py-3 text-sm font-semibold text-white"
+              >
+                Borrar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <footer className="mx-auto mt-8 w-full max-w-7xl px-4 pb-8 sm:px-6 lg:px-8">
         <div className="glass rounded-[2rem] border border-white/60 px-5 py-6 text-[#6d1047] shadow-[0_18px_50px_rgba(163,16,95,0.08)] lg:px-7">

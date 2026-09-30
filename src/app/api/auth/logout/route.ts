@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/backend/supabase/server";
+import { clearAdminSession } from "@/backend/neon-auth";
 
 export async function POST() {
   try {
-    const supabase = await createSupabaseServerClient();
-    await supabase.auth.signOut();
+    await clearAdminSession();
   } catch {
     // The client can still be redirected even if the session is already gone.
   }

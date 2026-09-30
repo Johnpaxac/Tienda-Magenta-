@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import CatalogPage from "@/frontend/CatalogPage";
-import { getAdminUser } from "@/backend/supabase/server";
+import { getAdminUser } from "@/backend/neon-auth";
 
 export default async function AdminPanelPage() {
   const admin = await getAdminUser().catch(() => null);

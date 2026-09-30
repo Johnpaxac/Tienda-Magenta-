@@ -1,6 +1,18 @@
 create table if not exists public.admin_users (
-  user_id uuid primary key references auth.users(id) on delete cascade
+  email text primary key,
+  name text not null,
+  password_hash text not null,
+  created_at timestamptz not null default now()
 );
+
+create table if not exists public.auth_sessions (
+  token_hash text primary key,
+  admin_email text not null references public.admin_users(email) on delete cascade,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists auth_sessions_expires_at_idx on public.auth_sessions (expires_at);
 
 create table if not exists public.categories (
   name text primary key,
@@ -16,7 +28,8 @@ create table if not exists public.products (
   category text not null,
   image text not null,
   featured boolean not null default false,
-  sold_out boolean not null default false
+  sold_out boolean not null default false,
+  stock_quantity integer not null default 0 check (stock_quantity >= 0)
 );
 
 alter table public.admin_users enable row level security;

@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/backend/supabase/server";
+import { createAdminSession, verifyPassword } from "@/backend/neon-auth";
+import {
+  clearLoginFailures,
+  getClientAddress,
+  isLoginBlocked,
+  registerLoginFailure,
+} from "@/backend/login-rate-limit";
 
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as { email?: string; password?: string } | null;
@@ -10,27 +16,33 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Completá email y contraseña." }, { status: 400 });
   }
 
-  try {
-    const supabase = await createSupabaseServerClient();
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const attemptKey = `${getClientAddress(request)}:${email}`;
+  const blockedFor = isLoginBlocked(attemptKey);
 
-    if (error || !data.user) {
+  if (blockedFor > 0) {
+    return NextResponse.json(
+      { error: "Demasiados intentos. Probá nuevamente más tarde." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(blockedFor / 1000)) } },
+    );
+  }
+
+  try {
+    const { sql } = await import("@/backend/neon");
+    const [admin] = await sql`
+      select email, name, password_hash
+      from admin_users
+      where email = ${email}
+    `;
+
+    if (!admin || !(await verifyPassword(password, String(admin.password_hash)))) {
+      registerLoginFailure(attemptKey);
       return NextResponse.json({ error: "Credenciales inválidas." }, { status: 401 });
     }
 
-    const { data: admin } = await supabase
-      .from("admin_users")
-      .select("user_id")
-      .eq("user_id", data.user.id)
-      .maybeSingle();
-
-    if (!admin) {
-      await supabase.auth.signOut();
-      return NextResponse.json({ error: "Esta cuenta no tiene permisos de administrador." }, { status: 403 });
-    }
-
+    await createAdminSession({ email: String(admin.email), name: String(admin.name) });
+    clearLoginFailures(attemptKey);
     return NextResponse.json({ ok: true });
   } catch {
-    return NextResponse.json({ error: "Supabase no está configurado." }, { status: 500 });
+    return NextResponse.json({ error: "Neon no está configurado." }, { status: 500 });
   }
 }
