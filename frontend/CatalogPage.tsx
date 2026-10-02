@@ -82,17 +82,21 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
   const router = useRouter();
   const imageInputRef = useRef<HTMLInputElement>(null);
   const categoryImageInputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [products, setProducts] = useState(initialProducts);
   const [query, setQuery] = useState("");
+  const [queryInput, setQueryInput] = useState("");
   const [catalogCategories, setCatalogCategories] = useState<Array<"Todos" | Product["category"]>>(
     categories as Array<"Todos" | Product["category"]>,
   );
   const [categoryImages, setCategoryImages] = useState<Record<string, string>>({});
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState("featured");
-  const [minPrice, setMinPrice] = useState(0);
-  const [maxPrice, setMaxPrice] = useState(200000);
+  const [minPrice, setMinPrice] = useState<number | null>(null);
+  const [maxPrice, setMaxPrice] = useState<number | null>(null);
+  const [minPriceInput, setMinPriceInput] = useState("");
+  const [maxPriceInput, setMaxPriceInput] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -172,7 +176,9 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
     return [...products]
       .filter((product) => {
         const matchesCategory = currentCategory === "Todos" || product.category === currentCategory;
-        const matchesPrice = product.price >= minPrice && product.price <= maxPrice;
+        const matchesPrice =
+          (minPrice === null || product.price >= minPrice) &&
+          (maxPrice === null || product.price <= maxPrice);
         const matchesQuery =
           !normalizedQuery ||
           product.name.toLowerCase().includes(normalizedQuery) ||
@@ -187,6 +193,8 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
         return Number(second.featured) - Number(first.featured) || first.name.localeCompare(second.name);
       });
   }, [maxPrice, minPrice, products, query, selectedCategory, sortBy]);
+
+  const hasActiveFilters = query.trim() !== "" || minPrice !== null || maxPrice !== null;
 
   const cartItems = useMemo(
     () =>
@@ -671,6 +679,30 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
 
   const goBackToCategories = () => {
     setSelectedCategory(null);
+    setQuery("");
+  };
+
+  const applyFilters = () => {
+    const nextMin = minPriceInput.trim() === "" ? null : Number(minPriceInput);
+    const nextMax = maxPriceInput.trim() === "" ? null : Number(maxPriceInput);
+
+    if (
+      (nextMin !== null && (!Number.isFinite(nextMin) || nextMin < 0)) ||
+      (nextMax !== null && (!Number.isFinite(nextMax) || nextMax < 0))
+    ) {
+      window.alert("Ingresá valores de precio válidos.");
+      return;
+    }
+
+    if (nextMin !== null && nextMax !== null && nextMax < nextMin) {
+      window.alert("El precio máximo no puede ser menor que el mínimo.");
+      return;
+    }
+
+    setQuery(queryInput.trim());
+    setMinPrice(nextMin);
+    setMaxPrice(nextMax);
+    searchInputRef.current?.blur();
   };
 
   if (adminOnly && !isAdmin) {
@@ -687,7 +719,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
       </div>
 
       <section className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-        <header className="glass overflow-hidden rounded-[2.25rem] border border-white/60 p-5 shadow-[0_24px_90px_rgba(146,18,88,0.1)] lg:p-7">
+        <header className="glass overflow-visible rounded-[2.25rem] border border-white/60 p-5 shadow-[0_24px_90px_rgba(146,18,88,0.1)] lg:p-7">
           <div className="flex flex-col gap-4 border-b border-[#d41478]/10 pb-5 lg:flex-row lg:items-start lg:justify-between">
             <div className="max-w-3xl space-y-4">
               <h1 className="heading-font max-w-4xl text-5xl leading-[0.85] text-[#d41478] sm:text-7xl lg:text-[6.5rem]">
@@ -709,7 +741,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                 <PersonIcon />
               </button>
               {accountOpen ? (
-                <div className="glass absolute right-0 top-14 z-10 w-64 rounded-2xl p-4 text-sm text-[#6b3151] shadow-xl">
+                <div className="glass absolute right-0 top-14 z-10 w-64 max-w-[calc(100vw-2rem)] rounded-2xl p-4 text-sm text-[#6b3151] shadow-xl">
                   <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#a4547b]">Cuenta</p>
                   <p className="mt-2 font-semibold text-[#6d1047]">{session?.name ?? "Invitado"}</p>
                   <p className="mt-1 text-xs text-[#8a5a78]">
@@ -725,15 +757,21 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
             </div>
           </div>
 
-          {selectedCategory ? (
-            <div className="mt-5 grid gap-3 lg:grid-cols-[1.5fr_1fr_1fr]">
+          <div className="mt-5 grid gap-3 lg:grid-cols-[1.5fr_1fr_1fr]">
               <label className="rounded-2xl border border-[#d41478]/15 bg-white/75 px-4 py-3 shadow-sm transition focus-within:border-[#d41478]/35 focus-within:bg-white">
                 <span className="mb-2 block text-[0.7rem] font-bold uppercase tracking-[0.25em] text-[#a4547b]">
                   Buscar por nombre o descripción
                 </span>
                 <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                  ref={searchInputRef}
+                  value={queryInput}
+                  onChange={(event) => setQueryInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      applyFilters();
+                    }
+                  }}
                   placeholder="maquillaje, bolso, collar..."
                   className="w-full bg-transparent text-sm outline-none placeholder:text-[#be7b9e]"
                 />
@@ -763,9 +801,9 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                   <input
                     type="number"
                     min="0"
-                    max={maxPrice}
-                    value={minPrice}
-                    onChange={(event) => setMinPrice(Math.max(0, Number(event.target.value)))}
+                    inputMode="numeric"
+                    value={minPriceInput}
+                    onChange={(event) => setMinPriceInput(event.target.value)}
                     className="w-full bg-transparent text-sm outline-none"
                   />
                 </label>
@@ -775,21 +813,28 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                   </span>
                   <input
                     type="number"
-                    min={minPrice}
-                    value={maxPrice}
-                    onChange={(event) => setMaxPrice(Math.max(minPrice, Number(event.target.value)))}
+                    min="0"
+                    inputMode="numeric"
+                    value={maxPriceInput}
+                    onChange={(event) => setMaxPriceInput(event.target.value)}
                     className="w-full bg-transparent text-sm outline-none"
                   />
                 </label>
               </div>
-            </div>
-          ) : null}
+              <button
+                type="button"
+                onClick={applyFilters}
+                className="rounded-2xl bg-[#d41478] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#b20b5f]"
+              >
+                Aplicar filtros
+              </button>
+          </div>
         </header>
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.6fr)]">
           <section
             className={
-              selectedCategory
+              selectedCategory || query.trim()
                 ? "glass rounded-[2rem] p-5 lg:p-6"
                 : "glass rounded-[2rem] p-5 lg:p-6 xl:col-span-2"
             }
@@ -802,9 +847,11 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                 <h2 className="heading-font text-4xl text-[#d41478]">Productos disponibles</h2>
               </div>
               <div className="flex flex-col items-start gap-3 sm:items-end">
-                <p className="text-sm text-[#7e4770]">
-                  {filteredProducts.length} resultados según los filtros aplicados.
-                </p>
+                {selectedCategory || query.trim() ? (
+                  <p className="text-sm text-[#7e4770]">
+                    {filteredProducts.length} {hasActiveFilters ? "resultados según los filtros aplicados." : "productos disponibles."}
+                  </p>
+                ) : null}
                 <div className="flex max-w-full flex-wrap gap-2 sm:justify-end">
                   <button
                     type="button"
@@ -940,7 +987,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
               </div>
             ) : null}
 
-            {selectedCategory ? (
+            {selectedCategory || query.trim() ? (
               <>
                 <div className="mt-5 flex items-center justify-between gap-3">
                   <button
@@ -951,7 +998,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                     ← Volver atrás
                   </button>
                   <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#a4547b]">
-                    {selectedCategory}
+                    {selectedCategory ?? "Resultados de búsqueda"}
                   </p>
                 </div>
 
@@ -1039,7 +1086,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                 </div>
               </>
             ) : (
-              <div className="mt-5 grid w-full gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              <div className="mt-5 grid w-full grid-cols-2 gap-4 xl:grid-cols-3 2xl:grid-cols-4">
                 {categoryCards.map((categoryCard) => (
                   <button
                     key={categoryCard.name}
