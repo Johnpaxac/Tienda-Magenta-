@@ -757,7 +757,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
             </div>
           </div>
 
-          <div className="mt-5 grid gap-3 lg:grid-cols-[1.5fr_1fr_1fr]">
+          <div className={`mt-5 grid gap-3 ${selectedCategory ? "lg:grid-cols-[1.5fr_1fr_1fr]" : ""}`}>
               <label className="rounded-2xl border border-[#d41478]/15 bg-white/75 px-4 py-3 shadow-sm transition focus-within:border-[#d41478]/35 focus-within:bg-white">
                 <span className="mb-2 block text-[0.7rem] font-bold uppercase tracking-[0.25em] text-[#a4547b]">
                   Buscar por nombre o descripción
@@ -777,57 +777,61 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                 />
               </label>
 
-              <label className="rounded-2xl border border-[#d41478]/15 bg-white/75 px-4 py-3 shadow-sm transition focus-within:border-[#d41478]/35 focus-within:bg-white">
-                <span className="mb-2 block text-[0.7rem] font-bold uppercase tracking-[0.25em] text-[#a4547b]">
-                  Ordenar
-                </span>
-                <select
-                  value={sortBy}
-                  onChange={(event) => setSortBy(event.target.value)}
-                  className="w-full bg-transparent text-sm outline-none"
-                >
-                  <option value="featured">Destacados</option>
-                  <option value="price-asc">Precio menor</option>
-                  <option value="price-desc">Precio mayor</option>
-                  <option value="name">Nombre</option>
-                </select>
-              </label>
+              {selectedCategory ? (
+                <>
+                  <label className="rounded-2xl border border-[#d41478]/15 bg-white/75 px-4 py-3 shadow-sm transition focus-within:border-[#d41478]/35 focus-within:bg-white">
+                    <span className="mb-2 block text-[0.7rem] font-bold uppercase tracking-[0.25em] text-[#a4547b]">
+                      Ordenar
+                    </span>
+                    <select
+                      value={sortBy}
+                      onChange={(event) => setSortBy(event.target.value)}
+                      className="w-full bg-transparent text-sm outline-none"
+                    >
+                      <option value="featured">Destacados</option>
+                      <option value="price-asc">Precio menor</option>
+                      <option value="price-desc">Precio mayor</option>
+                      <option value="name">Nombre</option>
+                    </select>
+                  </label>
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="rounded-2xl border border-[#d41478]/15 bg-white/75 px-4 py-3 shadow-sm transition focus-within:border-[#d41478]/35 focus-within:bg-white">
-                  <span className="mb-2 block text-[0.7rem] font-bold uppercase tracking-[0.25em] text-[#a4547b]">
-                    Precio mínimo
-                  </span>
-                  <input
-                    type="number"
-                    min="0"
-                    inputMode="numeric"
-                    value={minPriceInput}
-                    onChange={(event) => setMinPriceInput(event.target.value)}
-                    className="w-full bg-transparent text-sm outline-none"
-                  />
-                </label>
-                <label className="rounded-2xl border border-[#d41478]/15 bg-white/75 px-4 py-3 shadow-sm transition focus-within:border-[#d41478]/35 focus-within:bg-white">
-                  <span className="mb-2 block text-[0.7rem] font-bold uppercase tracking-[0.25em] text-[#a4547b]">
-                    Precio máximo
-                  </span>
-                  <input
-                    type="number"
-                    min="0"
-                    inputMode="numeric"
-                    value={maxPriceInput}
-                    onChange={(event) => setMaxPriceInput(event.target.value)}
-                    className="w-full bg-transparent text-sm outline-none"
-                  />
-                </label>
-              </div>
-              <button
-                type="button"
-                onClick={applyFilters}
-                className="rounded-2xl bg-[#d41478] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#b20b5f]"
-              >
-                Aplicar filtros
-              </button>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="rounded-2xl border border-[#d41478]/15 bg-white/75 px-4 py-3 shadow-sm transition focus-within:border-[#d41478]/35 focus-within:bg-white">
+                      <span className="mb-2 block text-[0.7rem] font-bold uppercase tracking-[0.25em] text-[#a4547b]">
+                        Precio mínimo
+                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        inputMode="numeric"
+                        value={minPriceInput}
+                        onChange={(event) => setMinPriceInput(event.target.value)}
+                        className="w-full bg-transparent text-sm outline-none"
+                      />
+                    </label>
+                    <label className="rounded-2xl border border-[#d41478]/15 bg-white/75 px-4 py-3 shadow-sm transition focus-within:border-[#d41478]/35 focus-within:bg-white">
+                      <span className="mb-2 block text-[0.7rem] font-bold uppercase tracking-[0.25em] text-[#a4547b]">
+                        Precio máximo
+                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        inputMode="numeric"
+                        value={maxPriceInput}
+                        onChange={(event) => setMaxPriceInput(event.target.value)}
+                        className="w-full bg-transparent text-sm outline-none"
+                      />
+                    </label>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={applyFilters}
+                    className="rounded-2xl bg-[#d41478] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#b20b5f]"
+                  >
+                    Aplicar filtros
+                  </button>
+                </>
+              ) : null}
           </div>
         </header>
 
