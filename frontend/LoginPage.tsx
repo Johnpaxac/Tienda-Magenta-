@@ -66,10 +66,6 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              <div className="mt-4 rounded-2xl bg-[#ffd2e7] p-4 text-sm text-[#7f124d]">
-                {notice}
-              </div>
-
               <form className="mt-5 space-y-3" onSubmit={handleSubmit}>
                 <label className="block">
                   <span className="mb-2 block text-xs font-bold uppercase tracking-[0.22em] text-[#a4547b]">
@@ -116,10 +112,6 @@ export default function LoginPage() {
             </div>
           </div>
         </div>
-
-        <footer className="glass rounded-[1.75rem] px-5 py-4 text-center text-sm text-[#7b4d68]">
-          Datos de contacto y pie de página pendientes. Acá después van tus enlaces, redes o texto final.
-        </footer>
 
       </section>
     </main>
