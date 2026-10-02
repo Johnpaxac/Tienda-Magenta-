@@ -625,13 +625,35 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                 onChange={(event) => setCategoryDrafts((current) => ({ ...current, [category]: { ...draft, name: event.target.value } }))}
                 className="min-w-0 rounded-xl border border-[#d41478]/15 bg-white px-3 py-2 text-sm outline-none"
               />
-              <input
-                aria-label={`Imagen de categoría ${category}`}
-                placeholder="URL de imagen"
-                value={draft.image}
-                onChange={(event) => setCategoryDrafts((current) => ({ ...current, [category]: { ...draft, image: event.target.value } }))}
-                className="min-w-0 rounded-xl border border-[#d41478]/15 bg-white px-3 py-2 text-sm outline-none"
-              />
+              <div className="flex min-w-0 flex-wrap gap-2">
+                <input
+                  aria-label={`Imagen de categoría ${category}`}
+                  placeholder="URL de imagen"
+                  value={draft.image}
+                  onChange={(event) => setCategoryDrafts((current) => ({ ...current, [category]: { ...draft, image: event.target.value } }))}
+                  className="min-w-[12rem] flex-1 rounded-xl border border-[#d41478]/15 bg-white px-3 py-2 text-sm outline-none"
+                />
+                <label className="inline-flex cursor-pointer items-center rounded-xl border border-[#d41478]/20 px-3 py-2 text-xs font-semibold text-[#b20b5f]">
+                  Subir foto
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) {
+                        void readFileAsDataUrl(file).then((dataUrl) => {
+                          setCategoryDrafts((current) => ({
+                            ...current,
+                            [category]: { ...draft, image: dataUrl },
+                          }));
+                        });
+                      }
+                      event.target.value = "";
+                    }}
+                  />
+                </label>
+              </div>
               <div className="flex flex-wrap gap-2 sm:justify-end">
                 <button type="button" onClick={() => void updateCategory(category)} className="rounded-full bg-[#d41478] px-4 py-2 text-xs font-semibold text-white">
                   Guardar
