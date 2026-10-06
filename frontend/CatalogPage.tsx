@@ -652,7 +652,20 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
 
   const categoriesPanel = isAdmin && categoriesOpen ? (
     <div className="mt-4 rounded-[1.6rem] border border-[#d41478]/12 bg-white/80 p-4 shadow-[0_18px_50px_rgba(163,16,95,0.08)]">
-      <p className="text-[0.7rem] font-bold uppercase tracking-[0.3em] text-[#a4547b]">Editar categorías</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-[0.7rem] font-bold uppercase tracking-[0.3em] text-[#a4547b]">Editar categorías</p>
+        <button
+          type="button"
+          onClick={() => {
+            setActiveAdminTab("category");
+            setCategoriesOpen(true);
+            setTimeout(() => document.getElementById("admin-panel")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+          }}
+          className="rounded-full bg-[#d41478] px-4 py-2 text-xs font-semibold text-white"
+        >
+          Crear categoría
+        </button>
+      </div>
       <div className="mt-3 space-y-3">
         {catalogCategories.filter((item) => item !== "Todos").map((category) => {
           const draft = categoryDrafts[category] ?? { name: category, image: categoryImages[category] ?? "" };
@@ -820,7 +833,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                 />
               </label>
 
-              {selectedCategory || adminOnly ? (
+              {selectedCategory || adminOnly || categoriesOpen ? (
                 <>
                   <label className="rounded-2xl border border-[#d41478]/15 bg-white/75 px-4 py-3 shadow-sm transition focus-within:border-[#d41478]/35 focus-within:bg-white">
                     <span className="mb-2 block text-[0.7rem] font-bold uppercase tracking-[0.25em] text-[#a4547b]">
