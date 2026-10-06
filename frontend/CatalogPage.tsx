@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { AuthSession } from "@/backend/auth";
-import { categories, initialProducts, type Product } from "@/backend/catalog";
+import { initialProducts, type Product } from "@/backend/catalog";
 
 type CartItem = {
   productId: number;
@@ -101,9 +101,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
   const [productsLoading, setProductsLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [queryInput, setQueryInput] = useState("");
-  const [catalogCategories, setCatalogCategories] = useState<Array<"Todos" | Product["category"]>>(
-    categories as Array<"Todos" | Product["category"]>,
-  );
+  const [catalogCategories, setCatalogCategories] = useState<Array<"Todos" | Product["category"]>>([]);
   const [categoryImages, setCategoryImages] = useState<Record<string, string>>({});
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState("featured");
@@ -154,7 +152,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
       })
       .then((nextCategories) => {
         if (!nextCategories?.length) {
-          setCatalogCategories(categories as Array<"Todos" | Product["category"]>);
+          setCatalogCategories([]);
           return;
         }
 
