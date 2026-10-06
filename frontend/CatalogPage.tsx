@@ -659,7 +659,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
           onClick={() => {
             setActiveAdminTab("category");
             setCategoriesOpen(true);
-            setTimeout(() => document.getElementById("admin-panel")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+            setTimeout(() => document.getElementById("category-form")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
           }}
           className="rounded-full bg-[#d41478] px-4 py-2 text-xs font-semibold text-white"
         >
@@ -1448,7 +1448,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                     </div>
                   </form>
                 ) : (
-                  <form className="mt-5 space-y-3" onSubmit={saveCategory}>
+                  <form id="category-form" className="mt-5 space-y-3" onSubmit={saveCategory}>
                     <label className="block">
                       <span className="mb-2 block text-xs font-bold uppercase tracking-[0.22em] text-[#a4547b]">
                         Nombre de la categoría
