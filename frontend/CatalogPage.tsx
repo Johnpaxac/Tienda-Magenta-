@@ -67,11 +67,23 @@ function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result);
-      } else {
+      if (typeof reader.result !== "string") {
         reject(new Error("No se pudo leer la imagen."));
+        return;
       }
+
+      const image = new Image();
+      image.onload = () => {
+        const maxSize = 1600;
+        const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL(file.type === "image/png" ? "image/png" : "image/jpeg", 0.82));
+      };
+      image.onerror = () => reject(new Error("No se pudo procesar la imagen."));
+      image.src = reader.result;
     };
     reader.onerror = () => reject(new Error("No se pudo leer la imagen."));
     reader.readAsDataURL(file);
@@ -104,6 +116,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
   const [activeAdminTab, setActiveAdminTab] = useState<"product" | "category">("product");
   const [productForm, setProductForm] = useState<ProductForm>(emptyProductForm);
   const [categoryForm, setCategoryForm] = useState({ name: "", image: "" });
+  const [actionMessage, setActionMessage] = useState("");
   const [stockOpen, setStockOpen] = useState(false);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [expandedStockCategories, setExpandedStockCategories] = useState<string[]>([]);
@@ -335,6 +348,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
     });
     setSelectedCategory(savedName);
     setProductForm((current) => ({ ...current, category: savedName as Product["category"] }));
+    setActionMessage("Categoría guardada correctamente.");
     resetCategoryForm();
   };
 
@@ -384,6 +398,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
           : item,
       ),
     );
+      setActionMessage("Stock actualizado correctamente.");
   };
 
   const updateCategory = async (oldName: string) => {
@@ -419,6 +434,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
       delete next[oldName];
       return next;
     });
+    setActionMessage("Categoría actualizada correctamente.");
   };
 
   const deleteCategory = async () => {
@@ -442,6 +458,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
       delete next[categoryToDelete];
       return next;
     });
+    setActionMessage("Categoría eliminada correctamente.");
     if (selectedCategory === categoryToDelete) setSelectedCategory(null);
     setCategoryToDelete(null);
   };
@@ -504,6 +521,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
         ? current.map((item) => (item.id === normalizedProduct.id ? normalizedProduct : item))
         : [normalizedProduct, ...current],
     );
+    setActionMessage(selectedProductId ? "Producto actualizado correctamente." : "Producto guardado correctamente.");
     resetProductForm();
   };
 
@@ -522,6 +540,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
     if (!response.ok) return;
     setProducts((current) => current.filter((item) => item.id !== productId));
     setCart((current) => current.filter((item) => item.productId !== productId));
+    setActionMessage("Producto eliminado correctamente.");
 
     if (selectedProductId === productId) {
       resetProductForm();
@@ -537,13 +556,13 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
   const applyImageFromFile = (file: File) => {
     void readFileAsDataUrl(file).then((dataUrl) => {
       setProductForm((current) => ({ ...current, image: dataUrl }));
-    });
+    }).catch(() => setActionMessage("No se pudo procesar la imagen seleccionada."));
   };
 
   const applyCategoryImageFromFile = (file: File) => {
     void readFileAsDataUrl(file).then((dataUrl) => {
       setCategoryForm((current) => ({ ...current, image: dataUrl }));
-    });
+    }).catch(() => setActionMessage("No se pudo procesar la imagen seleccionada."));
   };
 
   const handleImagePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -777,7 +796,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                 />
               </label>
 
-              {selectedCategory ? (
+              {selectedCategory || adminOnly ? (
                 <>
                   <label className="rounded-2xl border border-[#d41478]/15 bg-white/75 px-4 py-3 shadow-sm transition focus-within:border-[#d41478]/35 focus-within:bg-white">
                     <span className="mb-2 block text-[0.7rem] font-bold uppercase tracking-[0.25em] text-[#a4547b]">
@@ -1006,7 +1025,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                   </p>
                 </div>
 
-                <div className="mt-5 grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                   {filteredProducts.map((product) => (
                     <article
                       key={product.id}
@@ -1123,6 +1142,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
               <section id="admin-panel" className="glass rounded-[2rem] p-5 lg:p-6">
                 <div>
                   <h2 className="heading-font text-3xl text-[#d41478]">Editor de catálogo</h2>
+                  {actionMessage ? <p className="mt-2 text-sm font-semibold text-[#23805b]">{actionMessage}</p> : null}
                 </div>
 
                 <div className="mt-5 flex gap-2 rounded-full bg-[#fff2f8] p-1">
@@ -1285,6 +1305,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                         <img
                           src={productForm.image || initialProducts[0].image}
                           alt="Vista previa"
+                          onError={() => setActionMessage("No se pudo cargar la imagen. Revisá la URL o elegí un archivo válido.")}
                           className="h-full w-full object-cover"
                         />
                       </div>
@@ -1391,6 +1412,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                         <img
                           src={categoryForm.image || initialProducts[0].image}
                           alt="Vista previa de categoría"
+                          onError={() => setActionMessage("No se pudo cargar la imagen de categoría. Revisá la URL.")}
                           className="h-full w-full object-cover"
                         />
                       </div>
