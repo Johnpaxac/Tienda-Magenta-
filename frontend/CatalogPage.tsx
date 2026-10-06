@@ -97,6 +97,8 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [products, setProducts] = useState(initialProducts);
+  const [productsLoadedFromDatabase, setProductsLoadedFromDatabase] = useState(false);
+  const [productsLoading, setProductsLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [queryInput, setQueryInput] = useState("");
   const [catalogCategories, setCatalogCategories] = useState<Array<"Todos" | Product["category"]>>(
@@ -124,6 +126,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
   const [categoryDrafts, setCategoryDrafts] = useState<Record<string, { name: string; image: string }>>({});
   const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
+  const [expandedDescriptionId, setExpandedDescriptionId] = useState<number | null>(null);
 
   useEffect(() => {
     void fetch("/api/products", { cache: "no-store" })
@@ -132,8 +135,13 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
         return (await response.json()) as Product[];
       })
       .then((nextProducts) => {
-        if (nextProducts?.length) setProducts(nextProducts);
-      });
+        if (nextProducts) {
+          setProductsLoadedFromDatabase(true);
+          if (nextProducts.length) setProducts(nextProducts);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => setProductsLoading(false));
 
     void fetch("/api/categories", { cache: "no-store" })
       .then(async (response) => {
@@ -521,6 +529,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
         ? current.map((item) => (item.id === normalizedProduct.id ? normalizedProduct : item))
         : [normalizedProduct, ...current],
     );
+    setProductsLoadedFromDatabase(true);
     setActionMessage(selectedProductId ? "Producto actualizado correctamente." : "Producto guardado correctamente.");
     resetProductForm();
   };
@@ -605,7 +614,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                 <div className="space-y-2 border-t border-[#d41478]/10 px-4 py-3">
                   {categoryProducts.length ? categoryProducts.map((product) => (
                     <div key={product.id} className="flex flex-wrap items-center gap-3">
-                      <img src={productImage(product)} alt="" className="h-10 w-10 rounded-xl object-cover" />
+                      <img src={productImage(product)} alt="" loading="lazy" decoding="async" className="h-10 w-10 rounded-xl object-cover" />
                       <span className="min-w-0 flex-1 truncate text-sm text-[#7d345a]">{product.name}</span>
                       <input
                         aria-label={`Stock de ${product.name}`}
@@ -645,7 +654,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
 
           return (
             <div key={category} className="grid gap-3 rounded-2xl border border-[#d41478]/10 bg-white/75 p-3 sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-center">
-              <img src={categoryImages[category] || productImage(products.find((product) => product.category === category) ?? initialProducts[0])} alt="" className="h-12 w-12 rounded-xl object-cover" />
+              <img src={categoryImages[category] || productImage(products.find((product) => product.category === category) ?? initialProducts[0])} alt="" loading="lazy" decoding="async" className="h-12 w-12 rounded-xl object-cover" />
               <input
                 aria-label={`Nombre de categoría ${category}`}
                 value={draft.name}
@@ -1035,6 +1044,8 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                         <img
                           src={productImage(product)}
                           alt={product.name}
+                          loading="lazy"
+                          decoding="async"
                           className="h-full w-full object-cover opacity-95 transition duration-500 group-hover:scale-105"
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-[#82164a]/45 via-transparent to-transparent" />
@@ -1049,31 +1060,34 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                       </div>
 
                       <div className="space-y-3 p-3.5">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <h3 className="text-base font-semibold text-[#6d1047]">{product.name}</h3>
-                              {Number(product.stockQuantity ?? 0) <= 0 ? (
-                                <span className="inline-flex rounded-full bg-[#3d1b2d] px-2 py-1 text-[0.55rem] font-bold uppercase tracking-[0.2em] text-white">
-                                  Agotado
-                                </span>
-                              ) : null}
-                            </div>
-                            <p className="mt-1 text-xs leading-5 text-[#8a5a78]">{product.description}</p>
+                        <div className="min-w-0">
+                          <h3 className="break-words text-base font-semibold leading-6 text-[#6d1047]">{product.name}</h3>
+                          {Number(product.stockQuantity ?? 0) <= 0 ? (
+                            <span className="mt-2 inline-flex rounded-full bg-[#3d1b2d] px-2 py-1 text-[0.55rem] font-bold uppercase tracking-[0.2em] text-white">
+                              Agotado
+                            </span>
+                          ) : null}
+                          <p className={`mt-2 text-xs leading-5 text-[#8a5a78] ${expandedDescriptionId === product.id ? "" : "line-clamp-2"}`}>
+                            {product.description}
+                          </p>
+                          {product.description.length > 80 ? (
+                            <button
+                              type="button"
+                              onClick={() => setExpandedDescriptionId((current) => current === product.id ? null : product.id)}
+                              className="mt-1 text-xs font-semibold text-[#b20b5f]"
+                            >
+                              {expandedDescriptionId === product.id ? "Ocultar descripción" : "Ver descripción"}
+                            </button>
+                          ) : null}
+                        </div>
+                        <div className="flex items-center justify-between gap-3 rounded-xl bg-[#ffd2e7] px-3 py-2">
+                          <div>
+                            <div className="text-[0.55rem] font-bold uppercase tracking-[0.18em] text-[#a4547b]">Precio</div>
+                            <div className="text-sm font-black text-[#b20b5f]">{formatPrice(product.price)}</div>
                           </div>
-                          <div className="rounded-xl bg-[#ffd2e7] px-2.5 py-1.5 text-right">
-                            <div className="text-[0.55rem] font-bold uppercase tracking-[0.18em] text-[#a4547b]">
-                              Precio
-                            </div>
-                            <div className="text-sm font-black text-[#b20b5f]">
-                              {formatPrice(product.price)}
-                            </div>
-                            <p className="mt-2 text-xs font-semibold text-[#8a5a78]">
-                              {Number(product.stockQuantity ?? 0) > 0
-                                ? `Stock disponible: ${product.stockQuantity}`
-                                : "Agotado"}
-                            </p>
-                          </div>
+                          <p className="text-right text-xs font-semibold text-[#8a5a78]">
+                            {Number(product.stockQuantity ?? 0) > 0 ? `Stock: ${product.stockQuantity}` : "Agotado"}
+                          </p>
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2">
@@ -1093,7 +1107,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                           >
                             Comprar
                           </button>
-                          {isAdmin ? (
+                          {isAdmin && productsLoadedFromDatabase ? (
                             <button
                               type="button"
                               onClick={() => editProduct(product)}
@@ -1123,6 +1137,8 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                       <img
                         src={categoryCard.image}
                         alt={categoryCard.name}
+                        loading="lazy"
+                        decoding="async"
                         className="h-full w-full object-cover opacity-95 transition duration-500 group-hover:scale-105"
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-[#000000]/35 via-transparent to-transparent" />
@@ -1438,28 +1454,40 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
 
                 {activeAdminTab === "product" ? (
                   <div className="mt-6 space-y-3">
-                    {products.map((product) => (
-                      <div key={product.id} className="rounded-2xl bg-white/75 p-4">
-                        <div className="flex flex-wrap items-start gap-3">
+                    {productsLoading ? (
+                      <p className="rounded-2xl bg-white/75 p-4 text-sm text-[#8a5a78]">Cargando productos...</p>
+                    ) : null}
+                    {(productsLoadedFromDatabase ? products : []).map((product) => (
+                      <div key={product.id} className="rounded-2xl bg-white/75 p-3">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                           <img
                             src={productImage(product)}
                             alt={product.name}
+                            loading="lazy"
+                            decoding="async"
                             className="h-14 w-14 rounded-2xl object-cover"
                           />
                           <div className="min-w-0 flex-1">
-                            <p className="font-semibold text-[#6d1047]">{product.name}</p>
+                            <p className="break-words font-semibold leading-5 text-[#6d1047]">{product.name}</p>
                             <p className="text-sm text-[#8a5a78]">{formatPrice(product.price)}</p>
                             <p className="text-xs font-semibold text-[#8a5a78]">Stock: {product.stockQuantity ?? 0}</p>
                             <p className="mt-1 text-xs uppercase tracking-[0.2em] text-[#a4547b]">
                               {product.category}
                             </p>
                             {product.soldOut ? (
-                              <span className="mt-2 inline-flex rounded-full bg-[#3d1b2d] px-2 py-1 text-[0.55rem] font-bold uppercase tracking-[0.2em] text-white">
+                              <span className="mt-1 inline-flex rounded-full bg-[#3d1b2d] px-2 py-1 text-[0.55rem] font-bold uppercase tracking-[0.2em] text-white">
                                 Agotado
                               </span>
                             ) : null}
+                            <button
+                              type="button"
+                              onClick={() => setExpandedDescriptionId((current) => current === product.id ? null : product.id)}
+                              className="mt-2 block text-xs font-semibold text-[#b20b5f]"
+                            >
+                              {expandedDescriptionId === product.id ? product.description : "Ver descripción"}
+                            </button>
                           </div>
-                          <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+                          <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:shrink-0">
                             <button
                               type="button"
                               onClick={() => editProduct(product)}
@@ -1478,6 +1506,11 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                         </div>
                       </div>
                     ))}
+                    {productsLoadedFromDatabase && products.length === 0 ? (
+                      <p className="rounded-2xl bg-white/75 p-4 text-sm text-[#8a5a78]">
+                        No hay productos guardados todavía.
+                      </p>
+                    ) : null}
                   </div>
                 ) : (
                   <div className="mt-6 space-y-3">
