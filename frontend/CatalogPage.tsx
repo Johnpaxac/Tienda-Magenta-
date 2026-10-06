@@ -666,6 +666,27 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
           Crear categoría
         </button>
       </div>
+      {catalogCategories.filter((item) => item !== "Todos").length === 0 ? (
+        <form className="mt-4 grid gap-3 rounded-2xl border border-[#d41478]/10 bg-white/75 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" onSubmit={saveCategory}>
+          <input
+            aria-label="Nombre de nueva categoría"
+            value={categoryForm.name}
+            onChange={(event) => setCategoryForm((current) => ({ ...current, name: event.target.value }))}
+            placeholder="Nombre de la categoría"
+            className="min-w-0 rounded-xl border border-[#d41478]/15 bg-white px-3 py-2 text-sm outline-none"
+          />
+          <input
+            aria-label="URL de imagen de nueva categoría"
+            value={categoryForm.image}
+            onChange={(event) => setCategoryForm((current) => ({ ...current, image: event.target.value }))}
+            placeholder="URL de imagen (opcional)"
+            className="min-w-0 rounded-xl border border-[#d41478]/15 bg-white px-3 py-2 text-sm outline-none"
+          />
+          <button type="submit" className="rounded-xl bg-[#d41478] px-4 py-2 text-sm font-semibold text-white">
+            Guardar categoría
+          </button>
+        </form>
+      ) : null}
       <div className="mt-3 space-y-3">
         {catalogCategories.filter((item) => item !== "Todos").map((category) => {
           const draft = categoryDrafts[category] ?? { name: category, image: categoryImages[category] ?? "" };
