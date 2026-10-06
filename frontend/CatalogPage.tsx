@@ -96,7 +96,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
   const categoryImageInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [session, setSession] = useState<AuthSession | null>(null);
-  const [products, setProducts] = useState(initialProducts);
+  const [products, setProducts] = useState<Product[]>([]);
   const [productsLoadedFromDatabase, setProductsLoadedFromDatabase] = useState(false);
   const [productsLoading, setProductsLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -136,11 +136,15 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
       })
       .then((nextProducts) => {
         if (nextProducts) {
-          setProductsLoadedFromDatabase(true);
-          if (nextProducts.length) setProducts(nextProducts);
+          if (nextProducts.length) {
+            setProductsLoadedFromDatabase(true);
+            setProducts(nextProducts);
+          } else {
+            setProducts(initialProducts);
+          }
         }
       })
-      .catch(() => undefined)
+      .catch(() => setProducts(initialProducts))
       .finally(() => setProductsLoading(false));
 
     void fetch("/api/categories", { cache: "no-store" })
