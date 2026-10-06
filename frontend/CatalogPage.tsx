@@ -41,7 +41,7 @@ function formatPrice(amount: number) {
 }
 
 function productImage(product: Product) {
-  return product.image || initialProducts.find((item) => item.id === product.id)?.image || initialProducts[0].image;
+  return product.image || "";
 }
 
 function CartIcon() {
@@ -127,6 +127,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
   const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
   const [expandedDescriptionId, setExpandedDescriptionId] = useState<number | null>(null);
+  const [detailProductId, setDetailProductId] = useState<number | null>(null);
 
   useEffect(() => {
     void fetch("/api/products", { cache: "no-store" })
@@ -136,15 +137,14 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
       })
       .then((nextProducts) => {
         if (nextProducts) {
-          if (nextProducts.length) {
-            setProductsLoadedFromDatabase(true);
-            setProducts(nextProducts);
-          } else {
-            setProducts(initialProducts);
-          }
+          setProductsLoadedFromDatabase(true);
+          setProducts(nextProducts);
         }
       })
-      .catch(() => setProducts(initialProducts))
+      .catch(() => {
+        setProductsLoadedFromDatabase(true);
+        setProducts([]);
+      })
       .finally(() => setProductsLoading(false));
 
     void fetch("/api/categories", { cache: "no-store" })
@@ -185,13 +185,13 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
   const categoryCards = useMemo(
     () =>
       visibleCategories.map((name) => {
-        const product = products.find((item) => item.category === name) ?? initialProducts[0];
+        const product = products.find((item) => item.category === name);
         return {
           name,
-          image: categoryImages[name] || productImage(product),
+          image: categoryImages[name] || (productsLoading ? "" : product?.image || ""),
         };
       }),
-    [categoryImages, products, visibleCategories],
+    [categoryImages, products, productsLoading, visibleCategories],
   );
 
   const filteredProducts = useMemo(() => {
@@ -220,6 +220,9 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
   }, [maxPrice, minPrice, products, query, selectedCategory, sortBy]);
 
   const hasActiveFilters = query.trim() !== "" || minPrice !== null || maxPrice !== null;
+  const detailProduct = detailProductId === null
+    ? null
+    : products.find((product) => product.id === detailProductId) ?? null;
 
   const cartItems = useMemo(
     () =>
@@ -712,6 +715,16 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
   const goBackToCategories = () => {
     setSelectedCategory(null);
     setQuery("");
+    setDetailProductId(null);
+  };
+
+  const goBackFromProduct = () => {
+    if (detailProductId !== null) {
+      setDetailProductId(null);
+      return;
+    }
+
+    goBackToCategories();
   };
 
   const applyFilters = () => {
@@ -1028,17 +1041,68 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                 <div className="mt-5 flex items-center justify-between gap-3">
                   <button
                     type="button"
-                    onClick={goBackToCategories}
+                    onClick={goBackFromProduct}
                     className="inline-flex items-center gap-2 rounded-full border border-[#d41478]/20 bg-white px-3 py-2 text-sm font-semibold text-[#b20b5f]"
                   >
-                    ← Volver atrás
+                    ← {detailProductId !== null ? "Volver a productos" : "Volver atrás"}
                   </button>
                   <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#a4547b]">
                     {selectedCategory ?? "Resultados de búsqueda"}
                   </p>
                 </div>
 
+                {detailProduct ? (
+                  <article className="mt-5 overflow-hidden rounded-[1.5rem] border border-[#d41478]/10 bg-white/85 shadow-[0_14px_30px_rgba(163,16,95,0.08)]">
+                    <div className="grid gap-5 p-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] sm:p-6">
+                      <div className="overflow-hidden rounded-[1.25rem] bg-gradient-to-br from-[#ffd1e6] via-[#f7a0c9] to-[#d41478]">
+                        <img
+                          src={productImage(detailProduct)}
+                          alt={detailProduct.name}
+                          className="aspect-[4/3] h-full w-full object-cover"
+                        />
+                      </div>
+                      <div className="flex min-w-0 flex-col justify-center">
+                        <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#a4547b]">{detailProduct.category}</p>
+                        <h3 className="mt-2 break-words text-3xl font-semibold leading-tight text-[#6d1047]">{detailProduct.name}</h3>
+                        <p className="mt-4 text-sm leading-6 text-[#8a5a78]">{detailProduct.description}</p>
+                        <p className="mt-4 text-2xl font-black text-[#b20b5f]">{formatPrice(detailProduct.price)}</p>
+                        <p className="mt-2 text-sm font-semibold text-[#8a5a78]">
+                          {Number(detailProduct.stockQuantity ?? 0) > 0
+                            ? `Stock disponible: ${detailProduct.stockQuantity}`
+                            : "Agotado"}
+                        </p>
+                        <div className="mt-5 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => addToCart(detailProduct.id)}
+                            disabled={Number(detailProduct.stockQuantity ?? 0) <= 0}
+                            className="rounded-full bg-[#d41478] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-[#c7a9b8]"
+                          >
+                            Agregar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDetailProductId(null)}
+                            className="rounded-full border border-[#d41478]/20 px-4 py-2 text-sm font-semibold text-[#b20b5f]"
+                          >
+                            Volver a productos
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </article>
+                ) : (
                 <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                  {productsLoading ? (
+                    <p className="col-span-full rounded-2xl bg-white/75 p-5 text-sm text-[#8a5a78]">
+                      Cargando productos...
+                    </p>
+                  ) : null}
+                  {!productsLoading && productsLoadedFromDatabase && filteredProducts.length === 0 ? (
+                    <p className="col-span-full rounded-2xl bg-white/75 p-5 text-sm text-[#8a5a78]">
+                      No hay productos para mostrar en esta categoría.
+                    </p>
+                  ) : null}
                   {filteredProducts.map((product) => (
                     <article
                       key={product.id}
@@ -1071,18 +1135,6 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                               Agotado
                             </span>
                           ) : null}
-                          <p className={`mt-2 text-xs leading-5 text-[#8a5a78] ${expandedDescriptionId === product.id ? "" : "line-clamp-2"}`}>
-                            {product.description}
-                          </p>
-                          {product.description.length > 80 ? (
-                            <button
-                              type="button"
-                              onClick={() => setExpandedDescriptionId((current) => current === product.id ? null : product.id)}
-                              className="mt-1 text-xs font-semibold text-[#b20b5f]"
-                            >
-                              {expandedDescriptionId === product.id ? "Ocultar descripción" : "Ver descripción"}
-                            </button>
-                          ) : null}
                         </div>
                         <div className="flex items-center justify-between gap-3 rounded-xl bg-[#ffd2e7] px-3 py-2">
                           <div>
@@ -1111,6 +1163,13 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                           >
                             Comprar
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => setDetailProductId(product.id)}
+                            className="rounded-full border border-[#d41478]/20 bg-white px-3 py-2 text-xs font-semibold text-[#b20b5f] transition hover:bg-[#fff4fa]"
+                          >
+                            Ver detalle
+                          </button>
                           {isAdmin && productsLoadedFromDatabase ? (
                             <button
                               type="button"
@@ -1125,6 +1184,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                     </article>
                   ))}
                 </div>
+                )}
               </>
             ) : (
               <div className="mt-5 grid w-full grid-cols-2 gap-4 xl:grid-cols-3 2xl:grid-cols-4">
@@ -1134,17 +1194,24 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                     type="button"
                     onClick={() => {
                       setSelectedCategory(categoryCard.name);
+                      setDetailProductId(null);
                     }}
                     className="group relative w-full overflow-hidden rounded-[1.6rem] border border-[#d41478]/10 bg-white/85 text-left shadow-[0_14px_30px_rgba(163,16,95,0.08)] transition-transform duration-300 hover:-translate-y-1 hover:shadow-[0_20px_45px_rgba(163,16,95,0.14)]"
                   >
                     <div className="relative aspect-[4/3] overflow-hidden bg-gradient-to-br from-[#ffd1e6] via-[#f7a0c9] to-[#d41478]">
-                      <img
-                        src={categoryCard.image}
-                        alt={categoryCard.name}
-                        loading="lazy"
-                        decoding="async"
-                        className="h-full w-full object-cover opacity-95 transition duration-500 group-hover:scale-105"
-                      />
+                      {categoryCard.image ? (
+                        <img
+                          src={categoryCard.image}
+                          alt={categoryCard.name}
+                          loading="lazy"
+                          decoding="async"
+                          className="h-full w-full object-cover opacity-95 transition duration-500 group-hover:scale-105"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-sm font-semibold text-white/90">
+                          Cargando imagen...
+                        </div>
+                      )}
                       <div className="absolute inset-0 bg-gradient-to-t from-[#000000]/35 via-transparent to-transparent" />
                       <span className="absolute inset-x-0 bottom-0 p-4 text-left text-2xl font-black text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.45)]">
                         {categoryCard.name}
@@ -1463,15 +1530,15 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                     ) : null}
                     {(productsLoadedFromDatabase ? products : []).map((product) => (
                       <div key={product.id} className="rounded-2xl bg-white/75 p-3">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                        <div className="flex flex-col gap-3">
                           <img
                             src={productImage(product)}
                             alt={product.name}
                             loading="lazy"
                             decoding="async"
-                            className="h-14 w-14 rounded-2xl object-cover"
+                            className="h-14 w-14 shrink-0 rounded-2xl object-cover"
                           />
-                          <div className="min-w-0 flex-1">
+                          <div className="w-full min-w-0 flex-1">
                             <p className="break-words font-semibold leading-5 text-[#6d1047]">{product.name}</p>
                             <p className="text-sm text-[#8a5a78]">{formatPrice(product.price)}</p>
                             <p className="text-xs font-semibold text-[#8a5a78]">Stock: {product.stockQuantity ?? 0}</p>
