@@ -912,14 +912,8 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
           </div>
         </header>
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.6fr)]">
-          <section
-            className={
-              selectedCategory || query.trim()
-                ? "glass rounded-[2rem] p-5 lg:p-6"
-                : "glass rounded-[2rem] p-5 lg:p-6 xl:col-span-2"
-            }
-          >
+        <div className={`grid gap-6 ${selectedCategory && isAdmin ? "xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.6fr)]" : ""}`}>
+          <section className="glass rounded-[2rem] p-5 lg:p-6">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <p className="text-[0.7rem] font-bold uppercase tracking-[0.3em] text-[#a4547b]">
