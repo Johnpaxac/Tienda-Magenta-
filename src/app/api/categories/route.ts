@@ -5,11 +5,22 @@ import { sql } from "@/backend/neon";
 export async function GET() {
   try {
     const data = await sql`
-      select c.name, c.image, count(p.id)::int as "productCount"
-      from categories as c
-      left join products p on p.category = c.name
-      group by c.name, c.image
-      order by c.name
+      with category_rows as (
+        select c.name, c.image, count(p.id)::int as "productCount"
+        from categories as c
+        left join products p on p.category = c.name
+        group by c.name, c.image
+      ),
+      orphan_rows as (
+        select p.category as name, coalesce(min(nullif(p.image, '')), '') as image, count(*)::int as "productCount"
+        from products p
+        where not exists (select 1 from categories c where c.name = p.category)
+        group by p.category
+      )
+      select name, image, "productCount" from category_rows
+      union all
+      select name, image, "productCount" from orphan_rows
+      order by name
     `;
 
     return NextResponse.json(data);

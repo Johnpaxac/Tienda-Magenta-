@@ -119,13 +119,13 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
   const [actionMessage, setActionMessage] = useState("");
   const [stockOpen, setStockOpen] = useState(false);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
+  const [categoryCreateOpen, setCategoryCreateOpen] = useState(false);
   const [productsOpen, setProductsOpen] = useState(false);
   const [expandedStockCategories, setExpandedStockCategories] = useState<string[]>([]);
   const [stockDrafts, setStockDrafts] = useState<Record<number, string>>({});
   const [categoryDrafts, setCategoryDrafts] = useState<Record<string, { name: string; image: string }>>({});
   const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
-  const [expandedDescriptionId, setExpandedDescriptionId] = useState<number | null>(null);
   const [detailProductId, setDetailProductId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -235,6 +235,9 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
   const detailProduct = detailProductId === null
     ? null
     : products.find((product) => product.id === detailProductId) ?? null;
+  const editingProduct = selectedProductId === null
+    ? null
+    : products.find((product) => product.id === selectedProductId) ?? null;
 
   const cartItems = useMemo(
     () =>
@@ -375,6 +378,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
     setSelectedCategory(savedName);
     setProductForm((current) => ({ ...current, category: savedName as Product["category"] }));
     setActionMessage("Categoría guardada correctamente.");
+    setCategoryCreateOpen(false);
     resetCategoryForm();
   };
 
@@ -688,6 +692,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
           onClick={() => {
             setActiveAdminTab("category");
             setCategoriesOpen(true);
+            setCategoryCreateOpen(true);
             setTimeout(() => document.getElementById("category-form")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
           }}
           className="rounded-full bg-[#d41478] px-4 py-2 text-xs font-semibold text-white"
@@ -695,7 +700,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
           Crear categoría
         </button>
       </div>
-      {catalogCategories.filter((item) => item !== "Todos").length === 0 ? (
+      {categoryCreateOpen ? (
         <form className="mt-4 grid gap-3 rounded-2xl border border-[#d41478]/10 bg-white/75 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" onSubmit={saveCategory}>
           <input
             aria-label="Nombre de nueva categoría"
@@ -713,6 +718,16 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
           />
           <button type="submit" className="rounded-xl bg-[#d41478] px-4 py-2 text-sm font-semibold text-white">
             Guardar categoría
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setCategoryCreateOpen(false);
+              resetCategoryForm();
+            }}
+            className="rounded-xl border border-[#d41478]/20 px-4 py-2 text-sm font-semibold text-[#b20b5f]"
+          >
+            Cancelar
           </button>
         </form>
       ) : null}
@@ -1540,13 +1555,33 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                         {selectedProductId ? "Actualizar producto" : "Agregar producto"}
                       </button>
                       {selectedProductId ? (
-                        <button
-                          type="button"
-                          onClick={cancelProductEdit}
-                          className="rounded-full border border-[#d41478]/20 px-5 py-3 text-sm font-semibold text-[#b20b5f]"
-                        >
-                          Cancelar edición
-                        </button>
+                        <>
+                          {editingProduct ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => duplicateProduct(editingProduct)}
+                                className="rounded-full border border-[#d41478]/20 px-5 py-3 text-sm font-semibold text-[#b20b5f]"
+                              >
+                                Duplicar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setProductToDelete(editingProduct)}
+                                className="rounded-full border border-[#d41478]/20 px-5 py-3 text-sm font-semibold text-[#8f2457]"
+                              >
+                                Eliminar
+                              </button>
+                            </>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={cancelProductEdit}
+                            className="rounded-full border border-[#d41478]/20 px-5 py-3 text-sm font-semibold text-[#b20b5f]"
+                          >
+                            Cancelar edición
+                          </button>
+                        </>
                       ) : (
                         <button
                           type="button"
@@ -1645,74 +1680,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                   </form>
                 )}
 
-                {activeAdminTab === "product" ? (
-                  <div className="mt-6 space-y-3">
-                    {productsLoading ? (
-                      <p className="rounded-2xl bg-white/75 p-4 text-sm text-[#8a5a78]">Cargando productos...</p>
-                    ) : null}
-                    {(productsLoadedFromDatabase ? products : []).map((product) => (
-                      <div key={product.id} className="rounded-2xl bg-white/75 p-3">
-                        <div className="flex flex-col gap-3">
-                          <img
-                            src={productImage(product)}
-                            alt={product.name}
-                            loading="lazy"
-                            decoding="async"
-                            className="h-14 w-14 shrink-0 rounded-2xl object-cover"
-                          />
-                          <div className="w-full min-w-0 flex-1">
-                            <p className="break-words font-semibold leading-5 text-[#6d1047]">{product.name}</p>
-                            <p className="text-sm text-[#8a5a78]">{formatPrice(product.price)}</p>
-                            <p className="text-xs font-semibold text-[#8a5a78]">Stock: {product.stockQuantity ?? 0}</p>
-                            <p className="mt-1 text-xs uppercase tracking-[0.2em] text-[#a4547b]">
-                              {product.category}
-                            </p>
-                            {product.soldOut ? (
-                              <span className="mt-1 inline-flex rounded-full bg-[#3d1b2d] px-2 py-1 text-[0.55rem] font-bold uppercase tracking-[0.2em] text-white">
-                                Agotado
-                              </span>
-                            ) : null}
-                            <button
-                              type="button"
-                              onClick={() => setExpandedDescriptionId((current) => current === product.id ? null : product.id)}
-                              className="mt-2 block text-xs font-semibold text-[#b20b5f]"
-                            >
-                              {expandedDescriptionId === product.id ? product.description : "Ver descripción"}
-                            </button>
-                          </div>
-                          <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => editProduct(product)}
-                              className="rounded-full border border-[#d41478]/15 px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[#b20b5f]"
-                            >
-                              Editar
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => duplicateProduct(product)}
-                              className="rounded-full border border-[#d41478]/15 px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[#b20b5f]"
-                            >
-                              Duplicar
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setProductToDelete(product)}
-                              className="rounded-full border border-[#d41478]/15 px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[#8f2457]"
-                            >
-                              Eliminar
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    {productsLoadedFromDatabase && products.length === 0 ? (
-                      <p className="rounded-2xl bg-white/75 p-4 text-sm text-[#8a5a78]">
-                        No hay productos guardados todavía.
-                      </p>
-                    ) : null}
-                  </div>
-                ) : (
+                {activeAdminTab === "category" ? (
                   <div className="mt-6 space-y-3">
                     {catalogCategories
                       .filter((item) => item !== "Todos")
@@ -1737,7 +1705,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                         </div>
                       ))}
                   </div>
-                )}
+                ) : null}
               </section>
             ) : null}
           </aside>
