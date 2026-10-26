@@ -1,10 +1,4 @@
-export type Category =
-  | "Ojos"
-  | "Rostro"
-  | "Labios"
-  | "Bolsos"
-  | "Collares"
-  | "Accesorios";
+export type Category = string;
 
 export type Product = {
   id: number;

@@ -5,14 +5,17 @@ import { sql } from "@/backend/neon";
 export async function GET() {
   try {
     const data = await sql`
-      select name, image
-      from categories
-      order by name
+      select c.name, c.image, count(p.id)::int as "productCount"
+      from categories as c
+      left join products p on p.category = c.name
+      group by c.name, c.image
+      order by c.name
     `;
 
     return NextResponse.json(data);
-  } catch {
-    return NextResponse.json([], { status: 200 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudieron cargar las categorías.";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 

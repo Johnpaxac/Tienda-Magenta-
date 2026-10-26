@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
@@ -9,13 +9,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [notice, setNotice] = useState("Ingresá con la cuenta de administrador.");
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    setEmail("");
-    setPassword("");
-    setNotice("Ingresá con la cuenta de administrador.");
-    setLoading(false);
-  }, []);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();

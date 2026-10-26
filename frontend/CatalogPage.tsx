@@ -119,6 +119,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
   const [actionMessage, setActionMessage] = useState("");
   const [stockOpen, setStockOpen] = useState(false);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
+  const [productsOpen, setProductsOpen] = useState(false);
   const [expandedStockCategories, setExpandedStockCategories] = useState<string[]>([]);
   const [stockDrafts, setStockDrafts] = useState<Record<number, string>>({});
   const [categoryDrafts, setCategoryDrafts] = useState<Record<string, { name: string; image: string }>>({});
@@ -147,11 +148,13 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
 
     void fetch("/api/categories", { cache: "no-store" })
       .then(async (response) => {
-        if (!response.ok) return null;
+        if (!response.ok) {
+          throw new Error("No se pudieron cargar las categorías.");
+        }
         return (await response.json()) as Array<{ name: string; image?: string }>;
       })
       .then((nextCategories) => {
-        if (!nextCategories?.length) {
+        if (!nextCategories.length) {
           setCatalogCategories([]);
           return;
         }
@@ -159,6 +162,10 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
         setCategoryImages(Object.fromEntries(nextCategories.map((item) => [item.name, item.image ?? ""])));
         const nextValues = ["Todos", ...nextCategories.map((item) => item.name)] as Array<"Todos" | Product["category"]>;
         setCatalogCategories(Array.from(new Set(nextValues)) as Array<"Todos" | Product["category"]>);
+      })
+      .catch(() => {
+        setCatalogCategories([]);
+        setActionMessage("No se pudieron cargar las categorías. Revisá la conexión con la base de datos.");
       });
 
     if (!adminOnly) return;
@@ -191,6 +198,13 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
       }),
     [categoryImages, products, productsLoading, visibleCategories],
   );
+
+  const orphanProductCategories = useMemo(() => {
+    const knownCategories = new Set(visibleCategories);
+    return Array.from(new Set(products.map((product) => product.category))).filter(
+      (category) => !knownCategories.has(category),
+    );
+  }, [products, visibleCategories]);
 
   const filteredProducts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -335,7 +349,6 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
     }
 
     const normalized = nextName.replace(/\s+/g, " ");
-    const candidate = normalized as Product["category"];
 
     const response = await fetch("/api/categories", {
       method: "POST",
@@ -377,6 +390,22 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
       soldOut: Boolean(product.soldOut),
       stockQuantity: String(product.stockQuantity ?? 0),
     });
+  };
+
+  const duplicateProduct = (product: Product) => {
+    setSelectedProductId(null);
+    setProductForm({
+      name: `${product.name} (copia)`,
+      description: product.description,
+      price: String(product.price),
+      category: product.category,
+      image: product.image,
+      featured: Boolean(product.featured),
+      soldOut: Boolean(product.soldOut),
+      stockQuantity: String(product.stockQuantity ?? 0),
+    });
+    setActionMessage("Producto duplicado en el formulario. Podés cambiarle la categoría antes de guardarlo.");
+    document.getElementById("admin-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const updateProductStock = async (product: Product) => {
@@ -744,6 +773,53 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
     </div>
   ) : null;
 
+  const productsPanel = isAdmin && productsOpen ? (
+    <div className="mt-4 rounded-[1.6rem] border border-[#d41478]/12 bg-white/80 p-4 shadow-[0_18px_50px_rgba(163,16,95,0.08)]">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[0.7rem] font-bold uppercase tracking-[0.3em] text-[#a4547b]">Acceso rápido</p>
+          <p className="text-lg font-semibold text-[#6d1047]">Todos los productos</p>
+        </div>
+        <span className="text-xs font-semibold text-[#8a5a78]">{products.length} productos</span>
+      </div>
+      <div className="mt-3 max-h-[28rem] space-y-2 overflow-y-auto pr-1">
+        {products.length ? products.map((product) => (
+          <div key={product.id} className="flex items-center gap-3 rounded-xl border border-[#d41478]/10 bg-white/75 p-2">
+            <img
+              src={productImage(product)}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              className="h-12 w-12 shrink-0 rounded-xl object-cover"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-[#6d1047]">{product.name}</p>
+              <p className="truncate text-xs text-[#8a5a78]">{product.category}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                editProduct(product);
+                setSelectedCategory(product.category);
+                setDetailProductId(null);
+                setActiveAdminTab("product");
+                setProductsOpen(false);
+                setTimeout(() => document.getElementById("admin-panel")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+              }}
+              className="shrink-0 rounded-full bg-[#d41478] px-3 py-2 text-xs font-semibold text-white"
+            >
+              Editar
+            </button>
+          </div>
+        )) : (
+          <p className="rounded-xl border border-dashed border-[#d41478]/20 p-4 text-sm text-[#8a5a78]">
+            No hay productos guardados todavía.
+          </p>
+        )}
+      </div>
+    </div>
+  ) : null;
+
   const goBackToCategories = () => {
     setSelectedCategory(null);
     setQuery("");
@@ -963,6 +1039,16 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                         <span aria-hidden="true">▤</span>
                         <span>Categorías</span>
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => setProductsOpen((current) => !current)}
+                        className="inline-flex items-center gap-2 rounded-full border border-[#d41478]/20 bg-white px-4 py-2 text-sm font-semibold text-[#b20b5f] shadow-sm transition hover:bg-[#fff4fa]"
+                        aria-expanded={productsOpen}
+                        aria-controls="admin-products-panel"
+                      >
+                        <span aria-hidden="true">▦</span>
+                        <span>Productos</span>
+                      </button>
                     </>
                   ) : null}
                 </div>
@@ -971,6 +1057,15 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
 
             {stockPanel}
             {categoriesPanel}
+            <div id="admin-products-panel">{productsPanel}</div>
+            {isAdmin && orphanProductCategories.length ? (
+              <div className="mt-4 rounded-2xl border border-[#d97706]/30 bg-[#fff7ed] p-4 text-sm text-[#9a3412]">
+                <p className="font-bold">Hay productos con categorías inexistentes.</p>
+                <p className="mt-1">
+                  Revisá o recreá estas categorías antes de editar productos: {orphanProductCategories.join(", ")}.
+                </p>
+              </div>
+            ) : null}
 
             {cartOpen ? (
               <div
@@ -1220,6 +1315,7 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                     type="button"
                     onClick={() => {
                       setSelectedCategory(categoryCard.name);
+                      setProductForm((current) => ({ ...current, category: categoryCard.name }));
                       setDetailProductId(null);
                     }}
                     className="group relative w-full overflow-hidden rounded-[1.6rem] border border-[#d41478]/10 bg-white/85 text-left shadow-[0_14px_30px_rgba(163,16,95,0.08)] transition-transform duration-300 hover:-translate-y-1 hover:shadow-[0_20px_45px_rgba(163,16,95,0.14)]"
@@ -1591,6 +1687,13 @@ export default function CatalogPage({ adminOnly = false }: { adminOnly?: boolean
                               className="rounded-full border border-[#d41478]/15 px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[#b20b5f]"
                             >
                               Editar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => duplicateProduct(product)}
+                              className="rounded-full border border-[#d41478]/15 px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[#b20b5f]"
+                            >
+                              Duplicar
                             </button>
                             <button
                               type="button"
